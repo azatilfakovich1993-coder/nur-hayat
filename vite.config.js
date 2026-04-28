@@ -6,8 +6,13 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+      devOptions: {
+        enabled: false,
+      },
       manifest: {
         name: 'Nur Hayat · نور حياة',
         short_name: 'Nur Hayat',
@@ -23,18 +28,9 @@ export default defineConfig({
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
         ]
       },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
-        runtimeCaching: [
-          {
-            urlPattern: /^https:\/\/api\.quran\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'quran-api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 }
-            }
-          }
-        ]
+      injectManifest: {
+        globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
+        globIgnores: ['**/audio/**', '**/prayer/**'],
       }
     })
   ]

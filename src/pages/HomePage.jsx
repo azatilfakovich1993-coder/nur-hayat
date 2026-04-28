@@ -5,6 +5,9 @@ import { fetchVerse } from '../utils/fetchVerse'
 import { APP_VERSES } from '../data/verses'
 import { HADITHS } from '../data/hadiths'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { addNur, addNurIfLevel, claimDailyLogin } from '../utils/nur'
+import Adhkar from '../components/Adhkar'
+import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget } from '../components/BeginnerPath'
 
 const PRAYER_NAMES = ['Fajr','Dhuhr','Asr','Maghrib','Isha']
 const PRAYER_RU    = { Fajr:'Фаджр', Dhuhr:'Зухр', Asr:'Аср', Maghrib:'Магриб', Isha:'Иша' }
@@ -31,10 +34,10 @@ function getMilestoneInfo(streak) {
 
 function getGreeting() {
   const h = new Date().getHours()
-  if (h >= 5  && h < 12) return 'Доброе утро'
-  if (h >= 12 && h < 17) return 'Добрый день'
-  if (h >= 17 && h < 21) return 'Добрый вечер'
-  return 'Доброй ночи'
+  if (h >= 5  && h < 12) return { text: 'Доброе утро',  icon: '☀️' }
+  if (h >= 12 && h < 17) return { text: 'Добрый день',  icon: '🌤️' }
+  if (h >= 17 && h < 21) return { text: 'Добрый вечер', icon: '🌆' }
+  return { text: 'Доброй ночи', icon: '🌙' }
 }
 
 export default function HomePage() {
@@ -43,12 +46,33 @@ export default function HomePage() {
   const location = useLocation()
   const [verse,       setVerse]       = useState(null)
   const [dayTheme,    setDayTheme]    = useState(APP_VERSES.daily[0])
-  const [liked,       setLiked]       = useState(false)
+  const [liked,       setLiked]       = useState(() => {
+    const dayIdx = new Date().getDay()
+    const key = APP_VERSES.daily[dayIdx % APP_VERSES.daily.length].key
+    try { return JSON.parse(localStorage.getItem('liked_verse_keys') || '[]').includes(key) }
+    catch { return false }
+  })
   const [sparks,      setSparks]      = useState([])
   const [nurAnim,     setNurAnim]     = useState(false)
   const [donePrayers, setDonePrayers] = useState(new Set())
-  const [weekDone,    setWeekDone]    = useState([])  // bool[7] Пн..Вс
+  const [weekDone,    setWeekDone]    = useState([])  // bool[7] Пн..Вс текущей недели
+  const [streak,      setStreak]      = useState(0)
+  const [weekTotal,   setWeekTotal]   = useState(0)   // намазов за текущую неделю
   const [fireAnim,    setFireAnim]    = useState(false)
+  const [showAdhkar,      setShowAdhkar]      = useState(false)
+  const [showPath,        setShowPath]        = useState(false)
+  const [showMuslimPath,  setShowMuslimPath]  = useState(false)
+  const [hadithNurAnim,   setHadithNurAnim]   = useState(false)
+  const [hadithLiked,     setHadithLiked]     = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('liked_hadiths') || '[]')
+      return saved.some(h => h.ar === HADITHS[new Date().getDate() % HADITHS.length].ar)
+    } catch { return false }
+  })
+  const [surahProgress, setSurahProgress] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('surah_progress') || '{}') }
+    catch { return {} }
+  })
   const prevStreak = useRef(null)
   const hadith = HADITHS[new Date().getDate() % HADITHS.length]
 
@@ -58,16 +82,6 @@ export default function HomePage() {
 
   // Индекс сегодняшнего дня: Пн=0 … Вс=6
   const todayIdx = (new Date().getDay() + 6) % 7
-
-  // Серия: считаем подряд от сегодня назад
-  const streak = (() => {
-    let count = 0
-    for (let i = todayIdx; i >= 0; i--) {
-      if (weekDone[i]) count++
-      else break
-    }
-    return count
-  })()
 
   useEffect(() => {
     if (prevStreak.current !== null && streak > prevStreak.current) {
@@ -82,68 +96,202 @@ export default function HomePage() {
     const dayIdx = new Date().getDay()
     const theme  = APP_VERSES.daily[dayIdx % APP_VERSES.daily.length]
     setDayTheme(theme)
-    fetchVerse(theme.key, tid).then(v => v && setVerse(v))
+    fetchVerse(theme.key, tid).then(v => {
+      if (!v) return
+      setVerse(v)
+    })
   }, [tid])
+
+  // Синхронизируем лайк когда загружается аят
+  useEffect(() => {
+    if (!verse) return
+    try {
+      const keys = JSON.parse(localStorage.getItem('liked_verse_keys') || '[]')
+      setLiked(keys.includes(verse.ref))
+    } catch {}
+  }, [verse])
 
   function fetchPrayers() {
     if (!user) return
     const now = new Date()
+    const today = now.toISOString().split('T')[0]
+
+    // Текущая неделя (Пн–Вс) для кружков
     const dow = now.getDay()
     const diffToMon = dow === 0 ? -6 : 1 - dow
     const monday = new Date(now)
     monday.setDate(now.getDate() + diffToMon)
-
-    const dates = Array.from({ length: 7 }, (_, i) => {
+    const weekDates = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday)
       d.setDate(monday.getDate() + i)
       return d.toISOString().split('T')[0]
     })
-    const today = now.toISOString().split('T')[0]
+
+    // Последние 60 дней для подсчёта стрика
+    const since = new Date(now)
+    since.setDate(now.getDate() - 60)
+    const sinceStr = since.toISOString().split('T')[0]
 
     supabase
       .from('prayer_logs')
       .select('prayer, date')
       .eq('user_id', user.id)
-      .in('date', dates)
+      .gte('date', sinceStr)
       .then(({ data }) => {
         if (!data) return
+
+        // byDate: дата -> кол-во намазов
+        const byDate = {}
+        data.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + 1 })
+
         // Намазы сегодня
         setDonePrayers(new Set(
           data.filter(r => r.date === today).map(r => r.prayer)
         ))
-        // Дни недели: день считается выполненным если хотя бы 1 намаз отмечен
-        const byDate = {}
-        data.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + 1 })
-        setWeekDone(dates.map(d => (byDate[d] || 0) >= 5))
+
+        // Кружки текущей недели
+        setWeekDone(weekDates.map(d => (byDate[d] || 0) >= 5))
+
+        // Всего намазов за текущую неделю
+        const wTotal = weekDates.reduce((sum, d) => sum + (byDate[d] || 0), 0)
+        setWeekTotal(wTotal)
+
+        // Стрик: считаем назад от вчера (сегодня ещё идёт)
+        // Если сегодня уже ≥5 — включаем и сегодня
+        let count = 0
+        const todayFull = (byDate[today] || 0) >= 5
+        if (todayFull) count = 1
+
+        // Идём назад от вчера
+        const cursor = new Date(now)
+        cursor.setDate(cursor.getDate() - 1)
+        for (let i = 0; i < 60; i++) {
+          const dateStr = cursor.toISOString().split('T')[0]
+          if ((byDate[dateStr] || 0) >= 5) {
+            count++
+            cursor.setDate(cursor.getDate() - 1)
+          } else {
+            break
+          }
+        }
+
+        setStreak(count)
+
+        // Сохраняем актуальный стрик в профиль (чтобы ProfilePage видел то же значение)
+        if (count !== (profile?.streak || 0)) {
+          supabase.from('profiles').update({ streak: count }).eq('id', user.id)
+          setProfile(p => p ? { ...p, streak: count } : p)
+        }
       })
   }
 
   // Перезагружаем каждый раз когда открывается /home (в т.ч. при переключении вкладок)
   useEffect(() => {
     fetchPrayers()
+    try { setSurahProgress(JSON.parse(localStorage.getItem('surah_progress') || '{}')) }
+    catch {}
   }, [user, location.key])
 
+  // Ежедневный бонус за вход в приложение: +15 НУР раз в сутки
+  useEffect(() => {
+    if (user && profile) claimDailyLogin(user, profile, setProfile)
+  }, [user?.id])
+
+  // +100 НУР за стрик кратный 7 (все уровни)
+  useEffect(() => {
+    if (!user || !profile || streak < 7) return
+    if (streak % 7 !== 0) return
+    const key = `streak_nur_${streak}`
+    if (!localStorage.getItem(key)) {
+      localStorage.setItem(key, '1')
+      addNur(100, user, profile, setProfile)
+    }
+  }, [streak])
+
   function handleLike() {
-    if (liked) return
-    setLiked(true)
-    setNurAnim(true)
+    if (!verse) return
+    const newLiked = !liked
+    setLiked(newLiked)
 
-    // Спарклы
-    const s = Array.from({ length: 16 }, (_, i) => ({
-      id: i,
-      angle: (i / 16) * Math.PI * 2,
-      dist:  30 + Math.random() * 28,
-      color: i % 2 === 0 ? '#F0D080' : '#C9A84C'
-    }))
-    setSparks(s)
-    setTimeout(() => setSparks([]), 800)
-    setTimeout(() => setNurAnim(false), 1500)
+    try {
+      const keys = JSON.parse(localStorage.getItem('liked_verse_keys') || '[]')
+      const data = JSON.parse(localStorage.getItem('liked_verses_data') || '{}')
+      if (newLiked) {
+        if (!keys.includes(verse.ref)) keys.push(verse.ref)
+        data[verse.ref] = { arabic: verse.arabic, transliteration: verse.transliteration, translation: verse.translation }
+      } else {
+        const idx = keys.indexOf(verse.ref)
+        if (idx !== -1) keys.splice(idx, 1)
+      }
+      localStorage.setItem('liked_verse_keys', JSON.stringify(keys))
+      localStorage.setItem('liked_verses_data', JSON.stringify(data))
+    } catch {}
 
-    // Обновляем нур
-    const newNur = nur + 10
-    setProfile(p => ({ ...p, nur: newNur }))
-    if (user) supabase.from('profiles').update({ nur: newNur }).eq('id', user.id)
+    if (newLiked) {
+      setNurAnim(true)
+      const sp = Array.from({ length: 16 }, (_, i) => ({
+        id: i, angle: (i / 16) * Math.PI * 2,
+        dist: 30 + Math.random() * 28,
+        color: i % 2 === 0 ? '#F0D080' : '#C9A84C'
+      }))
+      setSparks(sp)
+      setTimeout(() => setSparks([]), 800)
+      setTimeout(() => setNurAnim(false), 1500)
+      addNur(10, user, profile, setProfile)
+    } else {
+      addNur(-10, user, profile, setProfile)
+    }
   }
+
+  function handleHadithLike() {
+    const newLiked = !hadithLiked
+    setHadithLiked(newLiked)
+    try {
+      const saved = JSON.parse(localStorage.getItem('liked_hadiths') || '[]')
+      if (newLiked) {
+        if (!saved.some(h => h.ar === hadith.ar))
+          saved.push({ ...hadith, date: new Date().toISOString() })
+        setHadithNurAnim(true)
+        setTimeout(() => setHadithNurAnim(false), 1500)
+        addNur(5, user, profile, setProfile)
+      } else {
+        const idx = saved.findIndex(h => h.ar === hadith.ar)
+        if (idx !== -1) saved.splice(idx, 1)
+        addNur(-5, user, profile, setProfile)
+      }
+      localStorage.setItem('liked_hadiths', JSON.stringify(saved))
+    } catch {}
+  }
+
+  function getMotivMessage() {
+    const h = new Date().getHours()
+    const n = donePrayers.size
+    const fullDaysThisWeek = weekDone.filter(Boolean).length
+
+    if (n === 5)
+      return { icon:'✨', color:'#52b788', text:'Машааллах! Все намазы сегодня выполнены. Аллах видит каждое твоё усилие.' }
+    if (n === 4)
+      return { icon:'💪', color:'var(--gold)', text:'Остался 1 намаз — не останавливайся. Ты почти у цели!' }
+    if (n === 3)
+      return { icon:'🤲', color:'var(--gold)', text:'Половина пройдена. Ещё 2 намаза — и день будет полным.' }
+    if (n === 2)
+      return { icon:'🌙', color:'#7B6BAE', text:'Не забывай — впереди ещё 3 намаза. Каждый шаг к Аллаху важен.' }
+    if (n === 1)
+      return { icon:'🌱', color:'#7B6BAE', text:'Хорошее начало! 4 намаза ждут тебя — продолжай.' }
+    if (n === 0 && h >= 20)
+      return { icon:'🌙', color:'#7B6BAE', text:'Ещё не поздно совершить Иша. Аллах принимает обращение в любое время.' }
+    if (n === 0 && h >= 12)
+      return { icon:'☀️', color:'#E8A030', text:'День идёт — не забывай о намазе. Каждый намаз освещает твой путь.' }
+    if (n === 0)
+      return { icon:'🌅', color:'#E8A030', text:'Начни день с Фаджра. Утренний намаз — лучшее начало дня.' }
+
+    if (streak >= 7 && fullDaysThisWeek === todayIdx + 1)
+      return { icon:'🔥', color:'#E05050', text:`${streak} дней подряд — Аллах любит постоянство. Ты на правильном пути!` }
+
+    return { icon:'🤲', color:'var(--gold)', text:'Эта неделя — новый шанс. Каждый намаз приближает тебя к Аллаху.' }
+  }
+
+  const motiv = getMotivMessage()
 
   return (
     <div style={s.page}>
@@ -157,8 +305,8 @@ export default function HomePage() {
         {/* ── Шапка ── */}
         <div style={s.header}>
           <div style={s.headerLeft}>
-            <div style={s.greeting}>{getGreeting()},</div>
-            <div style={s.name}>{name} <span style={s.moon}>🌙</span></div>
+            <div style={s.greeting}>{getGreeting().text},</div>
+            <div style={s.name}>{name} <span style={s.moon}>{getGreeting().icon}</span></div>
           </div>
           <div style={s.headerRight}>
             {/* Нур */}
@@ -190,6 +338,9 @@ export default function HomePage() {
           {verse ? (
             <>
               <div style={s.arabic} className="arabic gold-shimmer">{verse.arabic}</div>
+              {verse.transliteration && (
+                <div style={s.transliteration}>{verse.transliteration}</div>
+              )}
               <div style={{ ...s.ayatDivider, background: `linear-gradient(90deg,transparent,${dayTheme.color}50,transparent)` }} />
               <div style={s.translation}>{verse.translation}</div>
               <div style={s.ref}>Коран, {verse.ref}</div>
@@ -238,9 +389,24 @@ export default function HomePage() {
         <div style={s.hadithCard}>
           <div style={s.hadithQuote}>"</div>
           <div style={s.hadithAr} className="gold-shimmer">{hadith.ar}</div>
+          {hadith.translit && <div style={s.transliteration}>{hadith.translit}</div>}
           <div style={s.hadithDivider} />
           <div style={s.hadithText}>{hadith.text}</div>
           <div style={s.hadithSource}>— {hadith.source}</div>
+          <div style={s.likeRow}>
+            <div style={s.heartWrap}>
+              <button style={{
+                ...s.heartBtn,
+                color:       hadithLiked ? '#e84393' : 'var(--text-dim)',
+                borderColor: hadithLiked ? '#e8439350' : 'var(--border)',
+                animation:   hadithLiked ? 'heartBeat .45s ease' : 'none'
+              }} onClick={handleHadithLike}>
+                {hadithLiked ? '♥' : '♡'}
+              </button>
+              {hadithNurAnim && <div style={s.nurFloat}>+5 нур ✨</div>}
+            </div>
+            <div style={s.likeHint}>{hadithLiked ? 'Хадис сохранён' : 'Сохранить'}</div>
+          </div>
         </div>
 
         {/* ── Намазы сегодня ── */}
@@ -263,6 +429,12 @@ export default function HomePage() {
             <span style={{ color:'var(--gold)', fontWeight:700 }}>{donePrayers.size}</span>
             <span style={{ color:'var(--text-muted)' }}> из 5 совершено</span>
           </div>
+        </div>
+
+        {/* ── Мотивация ── */}
+        <div style={{ ...s.motivCard, borderColor: motiv.color + '40', background: motiv.color + '0d' }}>
+          <span style={{ fontSize: 22, flexShrink: 0 }}>{motiv.icon}</span>
+          <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>{motiv.text}</div>
         </div>
 
         {/* ── Серия дней ── */}
@@ -316,9 +488,61 @@ export default function HomePage() {
           )
         })()}
 
-        <div style={{ height: 90 }} />
+        {/* ── Знания (папка) ── */}
+        <div style={s.sectionLabel}>Знания</div>
+        <button style={s.learnFolder} onClick={() => navigate('/learn')}>
+          <div style={s.learnFolderTop}>
+            {['❓','🌙','🔤','📚','🕌','📿','🤲','✨','☪️','🌙','🎯','📖'].map((icon, i) => (
+              <div key={i} style={s.learnFolderCell}>{icon}</div>
+            ))}
+          </div>
+          <div style={s.learnFolderBottom}>
+            <span style={s.learnFolderTitle}>Знания</span>
+            <span style={s.learnFolderSub}>12 разделов · Азкары, Дуа, Пророки, Квиз и др.</span>
+          </div>
+          <span style={s.learnFolderArrow}>›</span>
+        </button>
+
+        {/* ── Путь / Прогресс (по уровню) ── */}
+        {(() => {
+          const level = profile?.level || 'seeker'
+          if (level === 'seeker') return (
+            <>
+              <div style={s.sectionLabel}>Путь новичка</div>
+              <BeginnerPathWidget onOpen={() => setShowPath(true)} />
+            </>
+          )
+          return (
+            <>
+              <div style={s.sectionLabel}>{level === 'practicing' ? 'Твой ибадат' : 'Путь мусульманина'}</div>
+              <MuslimPathWidget
+                streak={streak}
+                donePrayers={donePrayers}
+                level={level}
+                onOpen={() => setShowMuslimPath(true)}
+              />
+            </>
+          )
+        })()}
+
+        <div style={{ height: 24 }} />
       </div>
 
+
+      {showAdhkar && <Adhkar onClose={() => setShowAdhkar(false)} />}
+      {showPath   && <BeginnerPath onClose={() => setShowPath(false)} />}
+      {showMuslimPath && (
+        <MuslimPath
+          streak={streak}
+          weekDone={weekDone}
+          donePrayers={donePrayers}
+          level={profile?.level}
+          onClose={() => setShowMuslimPath(false)}
+          onOpenPrayer={() => { setShowMuslimPath(false); navigate('/prayer') }}
+          onOpenQuran={()  => { setShowMuslimPath(false); navigate('/quran') }}
+          onContinueQuran={suraId => { setShowMuslimPath(false); navigate(`/quran/${suraId}`) }}
+        />
+      )}
 
       <style>{`
         @keyframes orbFloat {
@@ -395,6 +619,97 @@ const s = {
   },
   streakVal: { fontSize:14, fontWeight:700, color:'#ff9f43' },
 
+  // Adhkar button
+  adhkarBtn: {
+    width:'100%', display:'flex', alignItems:'center', gap:12,
+    background:'linear-gradient(135deg,rgba(201,168,76,.1),rgba(201,168,76,.05))',
+    border:'1px solid rgba(201,168,76,.25)', borderRadius:18,
+    padding:'14px 16px', cursor:'pointer', outline:'none',
+    marginTop:16, textAlign:'left'
+  },
+  adhkarBtnIconWrap: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#C9A84C,#F0D080,#C9A84C)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    boxShadow:'0 0 16px rgba(201,168,76,.45), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  adhkarBtnIconEmoji: { fontSize:26 },
+  adhkarBtnText: { flex:1, display:'flex', flexDirection:'column', gap:2 },
+  adhkarBtnTitle: { fontSize:15, fontWeight:600, color:'var(--gold)' },
+  adhkarBtnSub: { fontSize:12, color:'var(--text-muted)' },
+  adhkarBtnArrow: { fontSize:22, color:'rgba(201,168,76,.5)', flexShrink:0 },
+
+  // 99 Names button
+  asmaBtn: {
+    width:'100%', display:'flex', alignItems:'center', gap:12,
+    background:'linear-gradient(135deg,rgba(120,80,200,.12),rgba(80,120,220,.08))',
+    border:'1px solid rgba(150,100,255,.25)', borderRadius:18,
+    padding:'14px 16px', cursor:'pointer', outline:'none',
+    marginTop:10, textAlign:'left'
+  },
+  asmaBtnIconWrap: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#7B5EA7,#4A90D9)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    boxShadow:'0 0 16px rgba(123,94,167,.5), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  asmaBtnIconEmoji: { fontSize:26 },
+  asmaBtnTitle: {
+    fontSize:15, fontWeight:700,
+    fontFamily:"'Scheherazade New',serif", direction:'rtl'
+  },
+
+  // Dua button
+  duaBtn: {
+    width:'100%', display:'flex', alignItems:'center', gap:12,
+    background:'linear-gradient(135deg,rgba(46,160,120,.12),rgba(46,160,120,.06))',
+    border:'1px solid rgba(46,160,120,.25)', borderRadius:18,
+    padding:'14px 16px', cursor:'pointer', outline:'none',
+    marginTop:10, textAlign:'left'
+  },
+  duaBtnIconWrap: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#2ea87a,#1a7a56)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    boxShadow:'0 0 16px rgba(46,160,120,.45), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  duaBtnIconEmoji: { fontSize:26 },
+  duaBtnTitle: { fontSize:15, fontWeight:600, color:'#2ea87a' },
+
+  // Islamic Calendar button
+  calBtn: {
+    width:'100%', display:'flex', alignItems:'center', gap:12,
+    background:'linear-gradient(135deg,rgba(74,100,180,.12),rgba(74,100,180,.06))',
+    border:'1px solid rgba(74,100,180,.3)', borderRadius:18,
+    padding:'14px 16px', cursor:'pointer', outline:'none',
+    marginTop:10, textAlign:'left'
+  },
+  calBtnIconWrap: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#3a5bbf,#6a8fd8)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    boxShadow:'0 0 16px rgba(74,100,180,.45), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  calBtnIconEmoji: { fontSize:26 },
+  calBtnTitle: { fontSize:15, fontWeight:600, color:'#6a8fd8' },
+
+  // Prayer Guide button
+  guideBtn: {
+    width:'100%', display:'flex', alignItems:'center', gap:12,
+    background:'linear-gradient(135deg,rgba(180,80,80,.12),rgba(180,80,80,.06))',
+    border:'1px solid rgba(180,80,80,.3)', borderRadius:18,
+    padding:'14px 16px', cursor:'pointer', outline:'none',
+    marginTop:10, textAlign:'left'
+  },
+  guideBtnIconWrap: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#a03030,#d06060)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    boxShadow:'0 0 16px rgba(180,80,80,.5), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  guideBtnIconEmoji: { fontSize:26 },
+  guideBtnTitle: { fontSize:15, fontWeight:600, color:'#d07070' },
+
   // Section label
   sectionLabel: {
     fontSize:11, fontWeight:600, color:'var(--text-muted)',
@@ -427,6 +742,7 @@ const s = {
     fontSize:22, lineHeight:1.9,
     color:'var(--gold-light)', textAlign:'center', direction:'rtl'
   },
+  transliteration: { fontSize:12, color:'var(--text-muted)', textAlign:'center', fontStyle:'italic', lineHeight:1.6, marginTop:6 },
   ayatDivider: { height:1, borderRadius:1 },
   translation: { fontSize:14, color:'var(--text)', lineHeight:1.75, textAlign:'center' },
   ref:         { fontSize:11, color:'var(--text-muted)', textAlign:'center' },
@@ -459,6 +775,11 @@ const s = {
   likeHint: { fontSize:13, color:'var(--text-muted)' },
 
   // Streak
+  motivCard: {
+    display:'flex', alignItems:'flex-start', gap:12,
+    borderRadius:'var(--radius-lg)', border:'1px solid',
+    padding:'12px 14px', marginTop:10,
+  },
   streakCard: {
     background:'var(--bg-card)', borderRadius:'var(--radius-xl)',
     border:'1px solid var(--border)',
@@ -526,6 +847,32 @@ const s = {
   hadithText:   { fontSize:14, color:'var(--text)', lineHeight:1.75, textAlign:'center', fontStyle:'italic' },
   hadithSource: { fontSize:11, color:'var(--text-muted)', textAlign:'center' },
 
+  // Знания — папка
+  learnFolder: {
+    width:'100%', display:'flex', alignItems:'center', gap:14,
+    background:'var(--bg-card)', border:'1px solid var(--border)',
+    borderRadius:20, padding:'14px 16px',
+    cursor:'pointer', outline:'none', textAlign:'left',
+  },
+  learnFolderTop: {
+    flexShrink:0,
+    width:88, height:88, borderRadius:20,
+    background:'rgba(255,255,255,.05)',
+    border:'1px solid rgba(255,255,255,.08)',
+    display:'grid', gridTemplateColumns:'repeat(4,1fr)',
+    gap:2, padding:6,
+  },
+  learnFolderCell: {
+    borderRadius:5,
+    background:'rgba(255,255,255,.07)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    fontSize:11,
+  },
+  learnFolderBottom: { flex:1, display:'flex', flexDirection:'column', gap:4 },
+  learnFolderTitle: { fontSize:16, fontWeight:700, color:'var(--text)' },
+  learnFolderSub: { fontSize:12, color:'var(--text-muted)', lineHeight:1.4 },
+  learnFolderArrow: { fontSize:22, color:'rgba(255,255,255,.2)', flexShrink:0 },
+
   // Bottom nav
   bottomNav: {
     display:'flex', background:'var(--bg-surface)',
@@ -543,5 +890,33 @@ const s = {
     position:'absolute', bottom:2, left:'50%', transform:'translateX(-50%)',
     width:4, height:4, borderRadius:'50%',
     background:'var(--gold)', boxShadow:'0 0 6px rgba(201,168,76,.7)'
-  }
+  },
+
+  // Прогресс сур
+  surahProgressCard: {
+    width:'100%', display:'flex', alignItems:'center', gap:14,
+    background:'linear-gradient(135deg,rgba(201,168,76,.12),rgba(201,168,76,.04))',
+    border:'1.5px solid rgba(201,168,76,.3)', borderRadius:20,
+    padding:'14px 16px', cursor:'pointer', outline:'none', textAlign:'left',
+  },
+  surahProgressLeft: { flex:1, display:'flex', alignItems:'center', gap:12 },
+  surahProgressIcon: {
+    width:48, height:48, borderRadius:14, flexShrink:0,
+    background:'linear-gradient(135deg,#9a6a10,#c9a84c)',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    fontSize:24, boxShadow:'0 0 16px rgba(201,168,76,.4)',
+  },
+  surahProgressText: { flex:1, display:'flex', flexDirection:'column', gap:5 },
+  surahProgressTitle: { fontSize:14, fontWeight:700, color:'var(--gold)' },
+  surahProgressBar: {
+    height:5, borderRadius:5,
+    background:'rgba(255,255,255,.1)', overflow:'hidden',
+  },
+  surahProgressFill: {
+    height:'100%', borderRadius:5,
+    background:'linear-gradient(90deg,#9a6a10,#c9a84c)',
+    transition:'width .4s',
+  },
+  surahProgressSub: { fontSize:11, color:'var(--text-muted)' },
+  surahProgressArrow: { fontSize:22, color:'rgba(201,168,76,.4)', flexShrink:0 },
 }

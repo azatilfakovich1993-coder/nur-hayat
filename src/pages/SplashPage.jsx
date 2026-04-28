@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 export default function SplashPage() {
   const navigate = useNavigate()
+  const { user, loading } = useAuth()
   const [phase, setPhase] = useState(0)
+  const [splashDone, setSplashDone] = useState(false)
   // phase 0 → black
   // phase 1 → arabic fades in + glows
   // phase 2 → latin + subtitle appear
@@ -13,9 +16,14 @@ export default function SplashPage() {
     const t1 = setTimeout(() => setPhase(1), 400)
     const t2 = setTimeout(() => setPhase(2), 1200)
     const t3 = setTimeout(() => setPhase(3), 2800)
-    const t4 = setTimeout(() => navigate('/auth'), 3600)
+    const t4 = setTimeout(() => setSplashDone(true), 3600)
     return () => [t1, t2, t3, t4].forEach(clearTimeout)
-  }, [navigate])
+  }, [])
+
+  useEffect(() => {
+    if (!splashDone || loading) return
+    navigate(user ? '/home' : '/auth', { replace: true })
+  }, [splashDone, loading, user, navigate])
 
   return (
     <div style={styles.page}>

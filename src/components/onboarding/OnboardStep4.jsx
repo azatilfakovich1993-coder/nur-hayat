@@ -1,166 +1,142 @@
-import { useState, useEffect } from 'react'
-
-export default function OnboardStep4({ onFinish, userName }) {
-  const [lit, setLit] = useState(false)
-
-  useEffect(() => {
-    const t = setTimeout(() => setLit(true), 500)
-    return () => clearTimeout(t)
-  }, [])
-
+// Коран и Намаз
+export default function OnboardStep4({ onNext }) {
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <h3 style={s.title}>Твой путь начинается</h3>
-        <p style={s.sub}>Возвращайся каждый день — и видишь, как растёт твой свет.</p>
+        <div style={s.title}>Коран и Намаз</div>
+        <div style={s.sub}>Два главных раздела — они всегда под рукой</div>
       </div>
 
-      {/* Profile preview */}
-      <div style={s.profile}>
-        <div style={s.profileGlow} />
-
-        {/* Avatar */}
-        <div style={s.avatarWrap}>
-          <div style={s.avatar}>
-            {userName?.charAt(0).toUpperCase() || '✨'}
+      {/* Коран */}
+      <div style={s.card}>
+        <div style={s.cardTop}>
+          <div style={s.iconWrap}>
+            <span style={s.icon}>📖</span>
           </div>
-          <div style={s.nurBadge}>
-            <span style={s.nurIcon}>◉</span>
-            <span>10 нур</span>
+          <div>
+            <div style={s.cardTitle}>Коран</div>
+            <div style={s.cardSub}>Читай · Слушай · Изучай</div>
           </div>
         </div>
-
-        <div style={s.name}>{userName || 'Дорогой друг'}</div>
-        <div style={s.subtitle}>Nur Hayat · Светлая жизнь</div>
-
-        {/* Streak */}
-        <div style={s.streakRow}>
-          <div style={s.streakLabel}>Серия</div>
-          <div style={s.streakDays}>
-            {['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map((d, i) => (
-              <div key={d} style={s.dayWrap}>
-                <div style={{
-                  ...s.flame,
-                  fontSize: i === 0 ? 24 : 14,
-                  opacity: i === 0 ? 1 : 0.2,
-                  filter: i === 0 && lit ? 'drop-shadow(0 0 8px rgba(255,160,0,0.8))' : 'none',
-                  transform: i === 0 && lit ? 'scale(1.2)' : 'scale(1)',
-                  transition: `all 0.5s ease ${i * 0.05}s`
-                }}>
-                  🔥
-                </div>
-                <div style={{ ...s.dayLabel, color: i === 0 ? 'var(--gold)' : 'var(--text-dim)' }}>
-                  {d}
-                </div>
-              </div>
-            ))}
+        <div style={s.mockQuran}>
+          <div style={s.surahRow}>
+            <div style={s.surahNum}>1</div>
+            <div style={s.surahInfo}>
+              <span style={s.surahName}>Аль-Фатиха</span>
+              <span style={s.surahMeta}>7 аятов · Мекканская</span>
+            </div>
+            <div style={s.surahAr} className="arabic">الفاتحة</div>
+          </div>
+          <div style={{ ...s.surahRow, opacity: 0.6 }}>
+            <div style={s.surahNum}>2</div>
+            <div style={s.surahInfo}>
+              <span style={s.surahName}>Аль-Бакара</span>
+              <span style={s.surahMeta}>286 аятов · Мединская</span>
+            </div>
+            <div style={s.surahAr} className="arabic">البقرة</div>
+          </div>
+          <div style={{ ...s.surahRow, opacity: 0.35 }}>
+            <div style={s.surahNum}>3</div>
+            <div style={s.surahInfo}>
+              <span style={s.surahName}>Аль-Имран</span>
+              <span style={s.surahMeta}>200 аятов · Мединская</span>
+            </div>
+            <div style={s.surahAr} className="arabic">آل عمران</div>
           </div>
         </div>
-
-        {/* Stats */}
-        <div style={s.stats}>
-          <Stat value="1" label="День" />
-          <div style={s.statDivider} />
-          <Stat value="10" label="Нур" />
-          <div style={s.statDivider} />
-          <Stat value="1" label="Аят" />
-        </div>
+        <div style={s.cardHint}>Все 114 сур · Аудио · Перевод · Транслитерация</div>
       </div>
 
-      <div style={s.hint}>
-        🔥 Первый огонёк стрика горит! Вернись завтра — и он продолжит гореть.
+      {/* Намаз */}
+      <div style={{ ...s.card, marginTop: 12 }}>
+        <div style={s.cardTop}>
+          <div style={{ ...s.iconWrap, background: 'rgba(201,168,76,.15)' }}>
+            <span style={s.icon}>🕌</span>
+          </div>
+          <div>
+            <div style={s.cardTitle}>Намаз</div>
+            <div style={s.cardSub}>Расписание · Трекер · Кибла</div>
+          </div>
+        </div>
+        <div style={s.prayerMock}>
+          {[
+            { name: 'Фаджр',  time: '05:12', done: true  },
+            { name: 'Зухр',   time: '13:28', done: true  },
+            { name: 'Аср',    time: '17:05', done: false, next: true },
+            { name: 'Магриб', time: '20:41', done: false },
+            { name: 'Иша',    time: '22:15', done: false },
+          ].map(p => (
+            <div key={p.name} style={s.pRow}>
+              <span style={{ ...s.pName, color: p.next ? 'var(--gold)' : 'var(--text)' }}>{p.name}</span>
+              <span style={{ ...s.pTime, color: p.next ? 'var(--gold)' : 'var(--text-muted)' }}>{p.time}</span>
+              <div style={{
+                ...s.pCheck,
+                background: p.done ? 'rgba(82,183,136,.2)' : 'rgba(255,255,255,.05)',
+                border: `1.5px solid ${p.done ? 'rgba(82,183,136,.6)' : p.next ? 'rgba(201,168,76,.5)' : 'var(--border)'}`,
+                color: p.done ? '#52b788' : 'transparent',
+              }}>✓</div>
+            </div>
+          ))}
+        </div>
+        <div style={s.cardHint}>Уведомления за 15 мин · Компас Киблы · История намазов</div>
       </div>
 
-      <button
-        className="btn btn-primary"
-        onClick={onFinish}
-        style={s.startBtn}
-      >
-        Начать ✨
+      <div style={{ flex: 1 }} />
+
+      <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={onNext}>
+        Дальше →
       </button>
     </div>
   )
 }
 
-function Stat({ value, label }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flex: 1 }}>
-      <div style={{ fontSize: 22, fontWeight: 700, color: 'var(--gold)' }}>{value}</div>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-    </div>
-  )
-}
-
 const s = {
-  wrap: { display: 'flex', flexDirection: 'column', gap: 20, flex: 1 },
-  header: { display: 'flex', flexDirection: 'column', gap: 6 },
-  title: { fontSize: 22, fontWeight: 600, color: 'var(--text)' },
-  sub: { fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.5 },
+  wrap: { flex: 1, display: 'flex', flexDirection: 'column' },
+  header: { marginBottom: 16 },
+  title: { fontSize: 22, fontWeight: 800, color: 'var(--text)', marginBottom: 6 },
+  sub: { fontSize: 14, color: 'var(--text-muted)' },
 
-  profile: {
-    background: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    border: '1px solid rgba(201,168,76,0.15)',
-    padding: 24,
-    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-    position: 'relative', overflow: 'hidden',
-    boxShadow: '0 8px 40px rgba(0,0,0,0.3)'
+  card: {
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 18, padding: '14px 16px',
   },
-  profileGlow: {
-    position: 'absolute', top: -40, left: '50%', transform: 'translateX(-50%)',
-    width: 200, height: 200, borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(201,168,76,0.12) 0%, transparent 70%)',
-    filter: 'blur(30px)', pointerEvents: 'none'
-  },
-  avatarWrap: { position: 'relative' },
-  avatar: {
-    width: 72, height: 72, borderRadius: '50%',
-    background: 'linear-gradient(135deg, #C9A84C30, #C9A84C15)',
-    border: '2px solid rgba(201,168,76,0.4)',
+  cardTop: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 },
+  iconWrap: {
+    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+    background: 'rgba(64,145,108,.15)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 28, fontWeight: 700, color: 'var(--gold)',
-    boxShadow: '0 0 24px rgba(201,168,76,0.2)'
   },
-  nurBadge: {
-    position: 'absolute', bottom: -8, right: -12,
-    background: 'linear-gradient(135deg, #C9A84C, #F0D080)',
-    color: '#070710', fontSize: 11, fontWeight: 700,
-    padding: '3px 8px', borderRadius: 10,
-    display: 'flex', alignItems: 'center', gap: 4,
-    boxShadow: '0 2px 8px rgba(201,168,76,0.4)'
+  icon: { fontSize: 22 },
+  cardTitle: { fontSize: 16, fontWeight: 700, color: 'var(--text)' },
+  cardSub: { fontSize: 12, color: 'var(--text-muted)' },
+  cardHint: {
+    marginTop: 10, fontSize: 11, color: 'var(--text-muted)',
+    borderTop: '1px solid var(--border)', paddingTop: 8,
   },
-  nurIcon: { fontSize: 9 },
 
-  name: { fontSize: 18, fontWeight: 600, color: 'var(--text)' },
-  subtitle: { fontSize: 12, color: 'var(--text-muted)', letterSpacing: '0.05em' },
-
-  streakRow: { width: '100%', display: 'flex', flexDirection: 'column', gap: 10 },
-  streakLabel: { fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.1em', textAlign: 'center' },
-  streakDays: { display: 'flex', justifyContent: 'space-between' },
-  dayWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 },
-  flame: { lineHeight: 1, transition: 'all 0.5s ease' },
-  dayLabel: { fontSize: 10, fontWeight: 500 },
-
-  stats: {
-    display: 'flex', width: '100%',
-    background: 'var(--bg-surface)',
-    borderRadius: 'var(--radius-md)',
-    padding: '14px 0',
-    border: '1px solid var(--border)'
+  mockQuran: { display: 'flex', flexDirection: 'column', gap: 6 },
+  surahRow: { display: 'flex', alignItems: 'center', gap: 10 },
+  surahNum: {
+    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+    background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.2)',
+    color: 'var(--gold)', fontSize: 12, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  statDivider: { width: 1, background: 'var(--border)' },
-
-  hint: {
-    fontSize: 13, color: 'var(--text-muted)',
-    background: 'rgba(255,160,0,0.06)',
-    border: '1px solid rgba(255,160,0,0.12)',
-    borderRadius: 'var(--radius-md)',
-    padding: '12px 16px', lineHeight: 1.5, textAlign: 'center'
+  surahInfo: { flex: 1, display: 'flex', flexDirection: 'column', gap: 1 },
+  surahName: { fontSize: 13, fontWeight: 600, color: 'var(--text)' },
+  surahMeta: { fontSize: 10, color: 'var(--text-muted)' },
+  surahAr: {
+    fontFamily: "'Scheherazade New', serif",
+    fontSize: 15, color: 'rgba(201,168,76,.7)', direction: 'rtl',
   },
-  startBtn: {
-    marginTop: 'auto',
-    fontSize: 17,
-    background: 'linear-gradient(135deg, #C9A84C 0%, #F0D080 50%, #C9A84C 100%)',
-    boxShadow: '0 0 32px rgba(201,168,76,0.5), 0 4px 20px rgba(0,0,0,0.4)'
-  }
+
+  prayerMock: { display: 'flex', flexDirection: 'column', gap: 7 },
+  pRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  pName: { flex: 1, fontSize: 13, fontWeight: 500 },
+  pTime: { fontSize: 13, fontWeight: 600, fontVariantNumeric: 'tabular-nums', width: 42, textAlign: 'right' },
+  pCheck: {
+    width: 28, height: 28, borderRadius: '50%', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 13, fontWeight: 700,
+  },
 }

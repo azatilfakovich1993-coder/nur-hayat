@@ -115,8 +115,11 @@ function SuraRow({ sura, onClick }) {
         </div>
       </div>
 
-      {/* Арабское название */}
-      <div style={s.arName} className="arabic">{sura.ar}</div>
+      {/* Арабское название + транслитерация */}
+      <div style={s.arBlock}>
+        <div style={s.arName} className="arabic">{sura.ar}</div>
+        <div style={s.arTranslit}>{sura.translit}</div>
+      </div>
 
       <span style={s.arrow}>›</span>
     </button>
@@ -215,10 +218,18 @@ const s = {
   ayatCount: { fontSize: 11, color: 'var(--text-muted)' },
   placeTag:  { fontSize: 11 },
 
+  arBlock: {
+    display: 'flex', flexDirection: 'column', alignItems: 'flex-end',
+    flexShrink: 0, gap: 2,
+  },
   arName: {
     fontFamily: "'Scheherazade New', serif",
     fontSize: 20, color: 'var(--gold-dim)',
-    direction: 'rtl', flexShrink: 0
+    direction: 'rtl',
+  },
+  arTranslit: {
+    fontSize: 11, color: 'var(--text-muted)',
+    fontStyle: 'italic', textAlign: 'right',
   },
   arrow: { color: 'var(--text-dim)', fontSize: 20, flexShrink: 0 }
 }

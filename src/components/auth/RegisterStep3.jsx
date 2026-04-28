@@ -30,7 +30,7 @@ export default function RegisterStep3({ onNext, onBack, loading }) {
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <div style={s.step}>Шаг 3 из 3</div>
+        <div style={s.step}>Шаг 4 из 4</div>
         <h2 style={s.title}>Где ты сейчас?</h2>
         <p style={s.sub}>Без осуждения — просто чтобы путь был твоим</p>
       </div>

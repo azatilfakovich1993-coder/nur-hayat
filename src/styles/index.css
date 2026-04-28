@@ -30,8 +30,34 @@
   --font-arabic: 'Scheherazade New', 'Amiri', serif;
   --font-ui:     'Inter', sans-serif;
 
+  --arabic-color:   var(--gold-light);
+  --arabic-size:    24px;
+  --text-translit:  rgba(255,255,255,.5);
+
   --safe-top:    env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ── Light theme ── */
+[data-theme="light"] {
+  --bg-deep:       #f5f0e8;
+  --bg-surface:    #ede7d8;
+  --bg-card:       #e4dccb;
+  --bg-card-hover: #d9d0bc;
+
+  --text:          #1a1510;
+  --text-muted:    #6b5f50;
+  --text-dim:      #a09080;
+
+  --border:        rgba(100, 80, 30, 0.15);
+  --border-active: rgba(100, 80, 30, 0.4);
+  --text-translit: rgba(60, 45, 30, 0.7);
+
+  --gold:          #2d8a65;
+  --gold-light:    #3daa80;
+  --gold-dim:      #1a6048;
+  --gold-glow:     rgba(45, 138, 101, 0.3);
+  --gold-glow-sm:  rgba(45, 138, 101, 0.12);
 }
 
 *, *::before, *::after {
@@ -111,6 +137,25 @@ body {
 .arabic.gold-shimmer,
 .gold-shimmer.arabic {
   font-family: var(--font-arabic);
+}
+
+/* Мятно-зелёный шиммер на светлой теме */
+[data-theme="light"] .gold-shimmer {
+  background: linear-gradient(
+    90deg,
+    #1a6b50 0%,
+    #2d8a65 20%,
+    #7dd4b0 40%,
+    #3daa80 55%,
+    #2d8a65 70%,
+    #7dd4b0 82%,
+    #1a6b50 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: goldShimmer 4s linear infinite;
 }
 
 /* ── Glow helpers ── */

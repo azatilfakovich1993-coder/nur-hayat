@@ -1,6 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import { addNur } from '../utils/nur'
 import { supabase } from '../supabase/client'
+import PrayerCalendar from '../components/PrayerCalendar'
+import { LocalNotifications } from '@capacitor/local-notifications'
+import { Capacitor } from '@capacitor/core'
 
 // ── Данные намазов ────────────────────────────────────────────
 const PRAYERS = [
@@ -47,21 +51,51 @@ function fmt(timeStr) {
 
 // ── Уведомления ───────────────────────────────────────────────
 async function requestNotifPerm() {
-  if (!('Notification' in window)) return false
-  if (Notification.permission === 'granted') return true
-  const res = await Notification.requestPermission()
-  return res === 'granted'
+  try {
+    if (Capacitor.isNativePlatform()) {
+      // Создаём канал уведомлений (обязательно для Android 8+)
+      await LocalNotifications.createChannel({
+        id: 'prayer_reminders',
+        name: 'Напоминания о намазе',
+        description: 'Уведомления перед временем намаза',
+        importance: 5, // IMPORTANCE_HIGH
+        sound: 'default',
+        vibration: true,
+        lights: true,
+      }).catch(() => {})
+
+      const { display } = await LocalNotifications.requestPermissions()
+      if (display !== 'granted') return false
+
+      // Android 12+ требует отдельного разрешения на точные будильники
+      try {
+        const { exact_alarm } = await LocalNotifications.checkExactNotificationSetting()
+        if (exact_alarm !== 'granted') {
+          await LocalNotifications.openExactNotificationSetting()
+        }
+      } catch { /* не все версии поддерживают */ }
+
+      return true
+    }
+    if (!('Notification' in window)) return false
+    if (Notification.permission === 'granted') return true
+    const res = await Notification.requestPermission()
+    return res === 'granted'
+  } catch { return false }
 }
 
 function sendNotif(title, body) {
+  if (Capacitor.isNativePlatform()) {
+    LocalNotifications.schedule({
+      notifications: [{ title, body, id: 900 + Math.floor(Math.random() * 99),
+        schedule: { at: new Date(Date.now() + 300) }, smallIcon: 'ic_launcher' }]
+    }).catch(() => {})
+    return
+  }
   if (Notification.permission !== 'granted') return
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.ready.then(reg =>
-      reg.showNotification(title, {
-        body, icon: '/icons/icon-192x192.png',
-        badge: '/icons/icon-192x192.png',
-        vibrate: [200, 100, 200]
-      })
+      reg.showNotification(title, { body, icon: '/icons/icon-192.png', vibrate: [200, 100, 200] })
     ).catch(() => new Notification(title, { body }))
   } else {
     new Notification(title, { body })
@@ -71,35 +105,71 @@ function sendNotif(title, body) {
 const timerIds = []
 function clearAllTimers() { timerIds.forEach(clearTimeout); timerIds.length = 0 }
 
-function scheduleNotifs(prayerTimes, notifBefore) {
+// prayerIndex * 100 + reminderMins = notification ID
+// Например: Fajr(0)*100+10 = 10, Asr(2)*100+20 = 220
+async function scheduleNotifs(prayerTimes, notifBefore) {
   clearAllTimers()
-  if (Notification.permission !== 'granted') return
-
   const now = new Date()
   const reminders = notifBefore.filter(Boolean)
 
+  if (Capacitor.isNativePlatform()) {
+    // Отменяем старые уведомления намазов (ID 0–499)
+    try {
+      const { notifications: pending } = await LocalNotifications.getPending()
+      const toCancel = pending.filter(n => n.id < 500).map(n => ({ id: n.id }))
+      if (toCancel.length > 0) await LocalNotifications.cancel({ notifications: toCancel })
+    } catch {}
+
+    const notifications = []
+    prayerTimes.forEach((p, pIdx) => {
+      const pt = parseTime(p.time)
+      const base = pIdx * 100
+
+      // В момент намаза
+      if (pt > now) {
+        notifications.push({
+          title: `🕌 Время ${p.ru}!`,
+          body: `Настало время ${p.desc.toLowerCase()} намаза`,
+          id: base,
+          channelId: 'prayer_reminders',
+          schedule: { at: pt, allowWhileIdle: true },
+          smallIcon: 'ic_launcher',
+          iconColor: '#C9A84C',
+        })
+      }
+      // За X минут
+      reminders.forEach(mins => {
+        const notifTime = new Date(pt.getTime() - mins * 60000)
+        if (notifTime > now) {
+          notifications.push({
+            title: `🔔 До ${p.ru} — ${mins} мин`,
+            body: `Намаз в ${fmt(p.time)}`,
+            id: base + mins,
+            channelId: 'prayer_reminders',
+            schedule: { at: notifTime, allowWhileIdle: true },
+            smallIcon: 'ic_launcher',
+            iconColor: '#C9A84C',
+          })
+        }
+      })
+    })
+    if (notifications.length > 0) {
+      await LocalNotifications.schedule({ notifications }).catch(() => {})
+    }
+    return
+  }
+
+  // Web fallback — работает только пока приложение открыто
+  if (Notification.permission !== 'granted') return
   prayerTimes.forEach(p => {
     const pt = parseTime(p.time)
-
-    // В момент намаза
     const delay0 = pt - now
-    if (delay0 > 0) {
-      timerIds.push(setTimeout(() =>
-        sendNotif(`🕌 Время ${p.ru}!`, `Настало время ${p.desc.toLowerCase()} намаза`),
-        delay0
-      ))
-    }
-
-    // За X минут до намаза
+    if (delay0 > 0) timerIds.push(setTimeout(() =>
+      sendNotif(`🕌 Время ${p.ru}!`, `Настало время ${p.desc.toLowerCase()} намаза`), delay0))
     reminders.forEach(mins => {
-      const notifTime = pt - mins * 60000
-      const delay = notifTime - now
-      if (delay > 0) {
-        timerIds.push(setTimeout(() =>
-          sendNotif(`🔔 До ${p.ru} — ${mins} мин`, `Намаз в ${fmt(p.time)}`),
-          delay
-        ))
-      }
+      const delay = pt - mins * 60000 - now
+      if (delay > 0) timerIds.push(setTimeout(() =>
+        sendNotif(`🔔 До ${p.ru} — ${mins} мин`, `Намаз в ${fmt(p.time)}`), delay))
     })
   })
 }
@@ -464,8 +534,8 @@ function calcQibla(lat, lon) {
 }
 
 function Qibla({ initLat, initLon }) {
-  const [heading,  setHeading]  = useState(null)   // курс устройства
-  const [qibla,    setQibla]    = useState(null)   // азимут на Мекку
+  const [heading,  setHeading]  = useState(null)
+  const [qibla,    setQibla]    = useState(null)
   const [lat,      setLat]      = useState(initLat || null)
   const [lon,      setLon]      = useState(initLon || null)
   const [locErr,   setLocErr]   = useState(false)
@@ -501,16 +571,40 @@ function Qibla({ initLat, initLon }) {
 
       gyroTimer.current = setTimeout(() => setNoGyro(true), 2000)
 
-      function onOrientation(e) {
-        const alpha = e.webkitCompassHeading ?? e.alpha
-        if (alpha === null || alpha === undefined) return
-        clearTimeout(gyroTimer.current)
-        setNoGyro(false)
-        setHeading(alpha)
+      let gotAbsolute = false
+
+      function toCompassHeading(e) {
+        // iOS: webkitCompassHeading уже в градусах по часовой от севера
+        if (e.webkitCompassHeading != null) return e.webkitCompassHeading
+        // Android deviceorientationabsolute: alpha идёт против часовой от севера
+        if (e.alpha != null) return (360 - e.alpha) % 360
+        return null
       }
 
+      function onAbsolute(e) {
+        const h = toCompassHeading(e)
+        if (h === null) return
+        gotAbsolute = true
+        clearTimeout(gyroTimer.current)
+        setNoGyro(false)
+        setHeading(h)
+      }
+
+      function onOrientation(e) {
+        if (gotAbsolute) return // предпочитаем абсолютный
+        const h = toCompassHeading(e)
+        if (h === null) return
+        clearTimeout(gyroTimer.current)
+        setNoGyro(false)
+        setHeading(h)
+      }
+
+      window.addEventListener('deviceorientationabsolute', onAbsolute, true)
       window.addEventListener('deviceorientation', onOrientation, true)
-      return () => window.removeEventListener('deviceorientation', onOrientation, true)
+      return () => {
+        window.removeEventListener('deviceorientationabsolute', onAbsolute, true)
+        window.removeEventListener('deviceorientation', onOrientation, true)
+      }
     }
 
     let cleanup
@@ -524,157 +618,203 @@ function Qibla({ initLat, initLon }) {
 
   if (locErr) return (
     <div style={qb.center}>
-      <div style={{ fontSize:40 }}>📍</div>
-      <div style={qb.errText}>Разрешите доступ к геолокации</div>
-      <div style={qb.errSub}>Без координат нельзя определить направление на Мекку</div>
+      <div style={{ fontSize:48, marginBottom:8 }}>📍</div>
+      <div style={qb.errText}>Нет доступа к геолокации</div>
+      <div style={qb.errSub}>Разрешите доступ к местоположению в настройках браузера, затем перезагрузите страницу</div>
     </div>
   )
 
   if (qibla === null) return (
     <div style={qb.center}>
       <div style={qb.spinner} />
-      <div style={qb.errSub}>Определяем координаты…</div>
+      <div style={qb.errSub}>Определяем ваше местоположение…</div>
     </div>
   )
 
+  const aligned = needle !== null && Math.abs(((needle + 180) % 360) - 180) < 10
+
   return (
     <div style={qb.wrap}>
-      <div style={qb.topInfo}>
-        <div style={qb.city}>
-          {lat && lon ? `${lat.toFixed(2)}° с.ш., ${lon.toFixed(2)}° в.д.` : ''}
+
+      {/* Заголовок */}
+      <div style={qb.titleBlock}>
+        <div style={qb.title}>🧭 Кибла</div>
+        <div style={qb.subtitle}>Направление на Мекку</div>
+      </div>
+
+      {/* Инфо-плашка */}
+      <div style={qb.infoRow}>
+        <div style={qb.infoBox}>
+          <div style={qb.infoLabel}>Азимут</div>
+          <div style={qb.infoVal}>{Math.round(qibla)}°</div>
         </div>
-        <div style={qb.degree}>{Math.round(qibla)}° · {cardinal}</div>
+        <div style={qb.infoBox}>
+          <div style={qb.infoLabel}>Направление</div>
+          <div style={qb.infoVal}>{cardinal}</div>
+        </div>
+        <div style={qb.infoBox}>
+          <div style={qb.infoLabel}>Координаты</div>
+          <div style={qb.infoVal}>{lat?.toFixed(1)}°, {lon?.toFixed(1)}°</div>
+        </div>
       </div>
 
       {/* Компас */}
       <div style={qb.compassWrap}>
-        {/* Роза компаса — вращается вместе с устройством */}
+        {/* Внешнее кольцо с градусами — вращается с устройством */}
         <div style={{
           ...qb.rose,
           transform: heading !== null ? `rotate(${-heading}deg)` : 'none',
-          transition: heading !== null ? 'transform .15s ease-out' : 'none',
+          transition: heading !== null ? 'transform .12s ease-out' : 'none',
         }}>
-          {['С','В','Ю','З'].map((c, i) => (
-            <div key={c} style={{ ...qb.roseLabel, transform:`rotate(${i*90}deg) translateY(-104px)` }}>
-              <span style={{ display:'block', transform:`rotate(${-i*90}deg)`, color: c==='С' ? '#e05050' : 'var(--text-dim)', fontWeight: c==='С' ? 700 : 400 }}>{c}</span>
+          {/* Стороны света */}
+          {[['С','#e05050',0],['В','var(--text-muted)',90],['Ю','var(--text-muted)',180],['З','var(--text-muted)',270]].map(([c, color, deg]) => (
+            <div key={c} style={{ ...qb.roseLabel, transform:`rotate(${deg}deg) translateY(-118px)` }}>
+              <span style={{ display:'block', transform:`rotate(${-deg}deg)`, color, fontWeight: c==='С' ? 800 : 500, fontSize: c==='С' ? 16 : 13 }}>{c}</span>
             </div>
           ))}
           {/* Деления */}
           {Array.from({length:72}).map((_,i) => (
             <div key={i} style={{
               position:'absolute', top:'50%', left:'50%',
-              width: i%9===0 ? 2 : 1,
-              height: i%9===0 ? 12 : 7,
-              background: i%9===0 ? 'rgba(255,255,255,.25)' : 'rgba(255,255,255,.1)',
+              width: i%18===0 ? 2.5 : i%9===0 ? 1.5 : 1,
+              height: i%18===0 ? 16 : i%9===0 ? 11 : 6,
+              background: i%18===0 ? 'rgba(255,255,255,.5)' : i%9===0 ? 'rgba(255,255,255,.3)' : 'rgba(255,255,255,.15)',
               transformOrigin:'0 0',
-              transform:`rotate(${i*5}deg) translateX(-50%) translateY(-120px)`,
+              transform:`rotate(${i*5}deg) translateX(-50%) translateY(-130px)`,
             }}/>
           ))}
-          {/* Метка Киблы на розе */}
-          <div style={{
-            position:'absolute', top:'50%', left:'50%',
-            width:3, height:18,
-            background:'var(--gold)',
-            boxShadow:'0 0 8px rgba(201,168,76,.8)',
-            borderRadius:2,
-            transformOrigin:'0 0',
-            transform:`rotate(${qibla}deg) translateX(-50%) translateY(-120px)`,
-          }}/>
-          <div style={{
-            position:'absolute', top:'50%', left:'50%',
-            fontSize:10, fontWeight:700, color:'var(--gold)',
-            transformOrigin:'0 0',
-            transform:`rotate(${qibla}deg) translateY(-140px)`,
-            whiteSpace:'nowrap',
-          }}>
-            <span style={{ display:'block', transform:`rotate(${-qibla}deg) translateX(-50%)` }}>
-              {Math.round(qibla)}°
-            </span>
-          </div>
         </div>
 
-        {/* Стрелка на Мекку — вращается по азимуту */}
+        {/* Стрелка — вращается к Мекке */}
         <div style={{
           ...qb.needleWrap,
           transform: needle !== null ? `rotate(${needle}deg)` : 'rotate(0deg)',
           transition: needle !== null ? 'transform .2s ease-out' : 'none',
         }}>
-          <div style={qb.needleUp} />
-          <div style={qb.kaabaIcon}>🕋</div>
+          {/* Верхняя часть стрелки (к Мекке) */}
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+            <div style={{ fontSize:28, lineHeight:1, filter: aligned ? 'drop-shadow(0 0 8px #C9A84C)' : 'none', transition:'filter .3s' }}>🕋</div>
+            <div style={qb.needleUp} />
+          </div>
+          {/* Нижняя часть */}
           <div style={qb.needleDown} />
         </div>
 
-        {/* Центральный кружок */}
+        {/* Центр */}
         <div style={qb.centerDot} />
+
+        {/* Подсветка когда выровнен */}
+        {aligned && <div style={qb.alignGlow} />}
       </div>
 
-      {noGyro ? (
-        <div style={qb.noGyroBox}>
-          <div style={qb.noGyroText}>Гироскоп недоступен</div>
-          <div style={qb.noGyroSub}>
-            Повернитесь на <span style={{ color:'var(--gold)', fontWeight:700 }}>{Math.round(qibla)}°</span> от севера ({cardinal}) — это и есть направление на Мекку
-          </div>
-        </div>
-      ) : heading === null ? (
-        <div style={qb.noGyroBox}>
-          <div style={qb.noGyroSub}>Направьте телефон горизонтально…</div>
-        </div>
-      ) : (
-        <div style={qb.noGyroBox}>
-          <div style={qb.noGyroSub}>Стрелка 🕋 указывает на Мекку</div>
-        </div>
-      )}
+      {/* Статус */}
+      <div style={{ ...qb.statusBox, borderColor: aligned ? 'rgba(72,199,120,.4)' : noGyro ? 'rgba(201,168,76,.3)' : 'var(--border)' }}>
+        {noGyro ? (
+          <>
+            <div style={qb.statusIcon}>⚠️</div>
+            <div style={qb.statusText}>
+              Гироскоп недоступен — поверните устройство вручную на <span style={{ color:'var(--gold)', fontWeight:700 }}>{Math.round(qibla)}°</span> от севера
+            </div>
+          </>
+        ) : heading === null ? (
+          <>
+            <div style={qb.statusIcon}>📱</div>
+            <div style={qb.statusText}>Держите телефон горизонтально экраном вверх…</div>
+          </>
+        ) : aligned ? (
+          <>
+            <div style={qb.statusIcon}>✅</div>
+            <div style={{ ...qb.statusText, color:'#48c778', fontWeight:600 }}>Вы смотрите в сторону Мекки!</div>
+          </>
+        ) : (
+          <>
+            <div style={qb.statusIcon}>🔄</div>
+            <div style={qb.statusText}>Поворачивайтесь, пока 🕋 не смотрит прямо на вас</div>
+          </>
+        )}
+      </div>
 
+      {/* Инструкция */}
       <div style={qb.hint}>
-        <div style={qb.hintRow}>📱 Держите телефон горизонтально экраном вверх</div>
-        <div style={qb.hintRow}>🔄 Поворачивайтесь, пока стрелка 🕋 не смотрит вперёд</div>
-        <div style={qb.hintRow}>🕌 Встаньте лицом в этом направлении — это Кибла</div>
+        <div style={qb.hintTitle}>Как пользоваться</div>
+        <div style={qb.hintRow}><span style={qb.hintNum}>1</span> Положите телефон горизонтально экраном вверх</div>
+        <div style={qb.hintRow}><span style={qb.hintNum}>2</span> Медленно поворачивайтесь вокруг своей оси</div>
+        <div style={qb.hintRow}><span style={qb.hintNum}>3</span> Остановитесь когда 🕋 смотрит прямо на вас</div>
+        <div style={qb.hintRow}><span style={qb.hintNum}>4</span> Это и есть направление Киблы — встаньте лицом</div>
       </div>
     </div>
   )
 }
 
 const qb = {
-  wrap:        { display:'flex', flexDirection:'column', alignItems:'center', gap:20, padding:'8px 0' },
-  center:      { display:'flex', flexDirection:'column', alignItems:'center', gap:12, padding:'40px 0' },
-  topInfo:     { textAlign:'center' },
-  city:        { fontSize:12, color:'var(--text-dim)', marginBottom:4 },
-  degree:      { fontSize:22, fontWeight:700, color:'var(--gold)', fontFamily:'var(--font-ui)' },
-  compassWrap: { position:'relative', width:260, height:260 },
+  wrap:        { display:'flex', flexDirection:'column', alignItems:'center', gap:18, padding:'8px 16px 24px' },
+  center:      { display:'flex', flexDirection:'column', alignItems:'center', gap:14, padding:'60px 24px', textAlign:'center' },
+
+  titleBlock:  { textAlign:'center' },
+  title:       { fontSize:22, fontWeight:800, color:'var(--text)' },
+  subtitle:    { fontSize:13, color:'var(--text-muted)', marginTop:3 },
+
+  infoRow:     { display:'flex', gap:10, width:'100%' },
+  infoBox:     { flex:1, background:'var(--bg-card)', border:'1px solid var(--border)', borderRadius:14,
+                 padding:'10px 8px', textAlign:'center' },
+  infoLabel:   { fontSize:10, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:4 },
+  infoVal:     { fontSize:15, fontWeight:700, color:'var(--gold)' },
+
+  compassWrap: { position:'relative', width:290, height:290 },
   rose:        { position:'absolute', inset:0, borderRadius:'50%',
-                 border:'1.5px solid rgba(255,255,255,.1)', background:'rgba(255,255,255,.03)' },
-  roseLabel:   { position:'absolute', top:'50%', left:'50%', fontSize:13, fontWeight:600,
-                 transformOrigin:'0 0', marginLeft:-7, marginTop:-9 },
+                 border:'2px solid rgba(201,168,76,.35)',
+                 background:'var(--bg-card)',
+                 boxShadow:'0 0 0 1px rgba(201,168,76,.1), inset 0 0 40px rgba(0,0,0,.3)' },
+  roseLabel:   { position:'absolute', top:'50%', left:'50%',
+                 transformOrigin:'0 0', marginLeft:-8, marginTop:-10 },
   needleWrap:  { position:'absolute', inset:0, display:'flex', flexDirection:'column',
                  alignItems:'center', justifyContent:'center' },
-  needleUp:    { width:3, height:90, background:'linear-gradient(to top, var(--gold), rgba(201,168,76,.3))',
-                 borderRadius:4, marginBottom:4 },
-  kaabaIcon:   { fontSize:22, lineHeight:1 },
-  needleDown:  { width:3, height:40, background:'rgba(255,255,255,.15)', borderRadius:4, marginTop:4 },
-  centerDot:   { position:'absolute', top:'50%', left:'50%', width:12, height:12, borderRadius:'50%',
+  needleUp:    { width:4, height:85,
+                 background:'linear-gradient(to top, #C9A84C, rgba(201,168,76,.2))',
+                 borderRadius:'4px 4px 0 0', boxShadow:'0 0 10px rgba(201,168,76,.5)' },
+  needleDown:  { width:4, height:50,
+                 background:'linear-gradient(to bottom, rgba(255,255,255,.25), rgba(255,255,255,.05))',
+                 borderRadius:'0 0 4px 4px' },
+  centerDot:   { position:'absolute', top:'50%', left:'50%', width:16, height:16, borderRadius:'50%',
                  background:'var(--gold)', transform:'translate(-50%,-50%)',
-                 boxShadow:'0 0 12px rgba(201,168,76,.6)' },
-  noGyroBox:   { textAlign:'center', padding:'0 16px' },
-  noGyroText:  { fontSize:13, color:'var(--text-muted)', marginBottom:6 },
-  noGyroSub:   { fontSize:13, color:'var(--text-muted)', lineHeight:1.6 },
-  hint:        { width:'100%', maxWidth:300, background:'rgba(255,255,255,.09)', borderRadius:14,
-                 border:'1px solid rgba(255,255,255,.15)', padding:'12px 16px', display:'flex',
-                 flexDirection:'column', gap:8 },
-  hintRow:     { fontSize:13, color:'rgba(255,255,255,.75)', lineHeight:1.5 },
-  errText:     { fontSize:15, fontWeight:600, color:'var(--text)', textAlign:'center' },
-  errSub:      { fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6 },
-  spinner:     { width:36, height:36, border:'3px solid var(--border)', borderTopColor:'var(--gold)',
+                 boxShadow:'0 0 16px rgba(201,168,76,.8)', zIndex:2 },
+  alignGlow:   { position:'absolute', inset:0, borderRadius:'50%',
+                 boxShadow:'0 0 30px rgba(72,199,120,.25)', pointerEvents:'none' },
+
+  statusBox:   { width:'100%', display:'flex', alignItems:'center', gap:10,
+                 background:'var(--bg-card)', border:'1px solid', borderRadius:16, padding:'14px 16px' },
+  statusIcon:  { fontSize:20, flexShrink:0 },
+  statusText:  { fontSize:13, color:'var(--text-muted)', lineHeight:1.5, flex:1 },
+
+  hint:        { width:'100%', background:'var(--bg-card)', borderRadius:16,
+                 border:'1px solid var(--border)', padding:'14px 16px',
+                 display:'flex', flexDirection:'column', gap:10 },
+  hintTitle:   { fontSize:12, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase',
+                 letterSpacing:'.08em', marginBottom:2 },
+  hintRow:     { fontSize:13, color:'var(--text)', lineHeight:1.5, display:'flex', alignItems:'flex-start', gap:10 },
+  hintNum:     { width:22, height:22, borderRadius:'50%', background:'rgba(201,168,76,.15)',
+                 border:'1px solid rgba(201,168,76,.3)', color:'var(--gold)', fontSize:11,
+                 fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
+
+  errText:     { fontSize:17, fontWeight:700, color:'var(--text)', textAlign:'center' },
+  errSub:      { fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6, maxWidth:280 },
+  spinner:     { width:40, height:40, border:'3px solid var(--border)', borderTopColor:'var(--gold)',
                  borderRadius:'50%', animation:'spin 1s linear infinite' },
 }
 
 // aladhan.com — таймзона определяется по координатам на сервере автоматически
 async function fetchTimings(lat, lon, method, school, fajrAngle, ishaAngle) {
-  // method=99 + methodSettings: всегда передаём углы, aladhan их учитывает
   const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=99&methodSettings=${fajrAngle},null,${ishaAngle}&school=${school}&midnightMode=0`
-  const res  = await fetch(url)
-  if (!res.ok) throw new Error('aladhan error')
-  const json = await res.json()
-  return json.data
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    if (!res.ok) throw new Error('aladhan error')
+    const json = await res.json()
+    return json.data
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ── Тасбих ────────────────────────────────────────────────────
@@ -837,11 +977,17 @@ const tb = {
 
 // ── Главная страница ──────────────────────────────────────────
 export default function PrayerPage() {
-  const { profile, user } = useAuth()
+  const { profile, user, setProfile } = useAuth()
   const lang = profile?.language || 'ru'
 
   // Режим: 'auto' (геолокация) или 'manual' (город вручную)
-  const [mode,      setMode]      = useState(() => localStorage.getItem('prayer_mode') || 'auto')
+  const [mode,      setMode]      = useState(() => {
+    const saved = localStorage.getItem('prayer_mode')
+    if (saved) return saved
+    // Если нет сохранённого города — сразу ручной режим, не ждём геолокацию
+    const hasCity = !!localStorage.getItem('prayer_city')
+    return hasCity ? 'auto' : 'manual'
+  })
   const [savedCity, setSavedCity] = useState(() => {
     try { return JSON.parse(localStorage.getItem('prayer_city')) } catch { return null }
   })
@@ -857,7 +1003,9 @@ export default function PrayerPage() {
   const [error,     setError]     = useState(null)
   const [now,       setNow]       = useState(new Date())
   const [notifOk,   setNotifOk]   = useState(false)
-  const [remind,    setRemind]    = useState([30, 20, 10])
+  const [remind,    setRemind]    = useState(() => {
+    try { return JSON.parse(localStorage.getItem('prayerRemind') || '[30,20,10]') } catch { return [30, 20, 10] }
+  })
 
   // ── Трекер намазов ──
   const [donePrayers, setDonePrayers] = useState(new Set())
@@ -866,13 +1014,14 @@ export default function PrayerPage() {
   const [rewardIdx,   setRewardIdx]   = useState(null) // null = не показывать
   const [rewardName,  setRewardName]  = useState('')
   const rewardCounter = useRef(0) // растёт с каждым отмеченным намазом
-  const [method,    setMethod]    = useState(() => parseInt(localStorage.getItem('prayer_method')  || '3'))
+  const [method,    setMethod]    = useState(() => parseInt(localStorage.getItem('prayer_method')  || '15'))
   const [school,    setSchool]    = useState(() => parseInt(localStorage.getItem('prayer_school')  || '0'))
   const [fajrAngle, setFajrAngle] = useState(() => parseInt(localStorage.getItem('prayer_fajr')    || '18'))
   const [ishaAngle, setIshaAngle] = useState(() => parseInt(localStorage.getItem('prayer_isha')    || '17'))
   const [showSettings, setShowSettings] = useState(false)
-  const [showTasbih,   setShowTasbih]   = useState(false)
-  const [showQibla,    setShowQibla]    = useState(false)
+  const [showTasbih,    setShowTasbih]    = useState(false)
+  const [showQibla,     setShowQibla]     = useState(false)
+  const [showCalendar,  setShowCalendar]  = useState(false)
 
   // Тик каждую секунду
   useEffect(() => {
@@ -891,7 +1040,7 @@ export default function PrayerPage() {
           setHijri(data.date.hijri)
           setLocation({ lat: savedCity.lat, lon: savedCity.lon, city: savedCity.name, country: '' })
         })
-        .catch(() => setError('Не удалось загрузить времена намаза'))
+        .catch(() => setError('api_error'))
         .finally(() => setLoading(false))
     } else {
       loadByGeo()
@@ -900,7 +1049,11 @@ export default function PrayerPage() {
 
   function loadByGeo() {
     setLoading(true); setError(null)
-    if (!navigator.geolocation) { setError('Геолокация не поддерживается'); setLoading(false); return }
+    if (!navigator.geolocation) {
+      setError('geo_blocked')
+      setLoading(false)
+      return
+    }
     navigator.geolocation.getCurrentPosition(
       async pos => {
         const { latitude: lat, longitude: lon } = pos.coords
@@ -909,17 +1062,20 @@ export default function PrayerPage() {
           setTimings(data.timings)
           setHijri(data.date.hijri)
           setLocation({ lat, lon, city: '', country: '' })
-          const geo = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=${lang}`
-          )
-          const gj = await geo.json()
-          const city    = gj.address?.city || gj.address?.town || gj.address?.village || ''
-          const country = gj.address?.country || ''
-          setLocation(prev => prev ? { ...prev, city, country } : { lat, lon, city, country })
-        } catch { setError('Не удалось загрузить времена намаза') }
+          try {
+            const geo = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=${lang}`
+            )
+            const gj = await geo.json()
+            const city    = gj.address?.city || gj.address?.town || gj.address?.village || ''
+            const country = gj.address?.country || ''
+            setLocation(prev => prev ? { ...prev, city, country } : { lat, lon, city, country })
+          } catch { /* геокодирование не критично */ }
+        } catch { setError('api_error') }
         setLoading(false)
       },
-      () => { setError('Разрешите доступ к геолокации'); setLoading(false) }
+      () => { setError('geo_blocked'); setLoading(false) },
+      { timeout: 5000, maximumAge: 60000 }
     )
   }
 
@@ -1022,6 +1178,8 @@ export default function PrayerPage() {
       // Обновляем стрик если все 5
       const newDone = donePrayers.size + 1
       if (newDone >= 5) setStreak(s => s + 1)
+      // +10 за намаз, +30 бонус если все 5 — суммируем в одном вызове чтобы не было гонки
+      addNur(newDone === 5 ? 40 : 10, user, profile, setProfile)
     }
 
     // Сохраняем в Supabase
@@ -1049,6 +1207,18 @@ export default function PrayerPage() {
     }
     return () => clearAllTimers()
   }, [timings, notifOk, remind])
+
+  // Сохраняем расписание намазов на сервер (для push-уведомлений когда приложение закрыто)
+  useEffect(() => {
+    if (!timings || !user || !notifOk) return
+    const today = new Date().toISOString().slice(0, 10)
+    const utcOffset = -new Date().getTimezoneOffset()
+    const prayerTimings = { Fajr: timings.Fajr, Dhuhr: timings.Dhuhr, Asr: timings.Asr, Maghrib: timings.Maghrib, Isha: timings.Isha }
+    supabase.from('prayer_schedules').upsert(
+      { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset },
+      { onConflict: 'user_id' }
+    )
+  }, [timings, user?.id, notifOk, remind])
 
   // Вычисляем статус каждого намаза
   const prayerList = PRAYERS.map(p => ({ ...p, time: timings?.[p.id] || null }))
@@ -1084,10 +1254,19 @@ export default function PrayerPage() {
     hijriStr = `${hijri.day} ${HIJRI_MONTHS[monthNum] || hijri.month?.en || ''} ${hijri.year} г.х.`
   }
 
-  function toggleRemind(min) {
-    setRemind(prev =>
-      prev.includes(min) ? prev.filter(x => x !== min) : [...prev, min]
-    )
+  async function toggleRemind(min) {
+    // Всегда переключаем — не блокируем на разрешении
+    setRemind(prev => {
+      const next = prev.includes(min) ? prev.filter(x => x !== min) : [...prev, min]
+      localStorage.setItem('prayerRemind', JSON.stringify(next))
+      return next
+    })
+    // Запрашиваем разрешение параллельно (не блокирует UI)
+    if (!notifOk) {
+      const ok = await requestNotifPerm()
+      setNotifOk(ok)
+      if (ok) sendNotif('🔔 Nur Hayat', 'Напоминания о намазе включены!')
+    }
   }
 
 
@@ -1105,12 +1284,9 @@ export default function PrayerPage() {
           <div style={s.dateRow}>
             <span style={s.hijriDate} className="gold-shimmer">{hijriStr || '...'}</span>
             <div style={{ display:'flex', gap:8 }}>
-              <button style={s.tasbihBtn} onClick={() => setShowTasbih(true)}>
-                📿 Тасбих
-              </button>
-              <button style={s.tasbihBtn} onClick={() => setShowQibla(true)}>
-                🧭 Кибла
-              </button>
+              <button style={s.tasbihBtn} onClick={() => setShowTasbih(true)}>📿 Тасбих</button>
+              <button style={s.tasbihBtn} onClick={() => setShowQibla(true)}>🧭 Кибла</button>
+              <button style={s.tasbihBtn} onClick={() => setShowCalendar(true)}>📅 История</button>
             </div>
           </div>
 
@@ -1184,6 +1360,11 @@ export default function PrayerPage() {
           <div style={s.loadWrap}>
             <div style={s.loadRing} />
             <div style={s.loadText}>{mode === 'manual' ? 'Загружаем времена намаза...' : 'Определяем местоположение...'}</div>
+            {mode === 'auto' && (
+              <div style={{ fontSize:12, color:'var(--text-muted)', textAlign:'center', marginTop:8, lineHeight:1.6 }}>
+                Появится запрос на доступ к геолокации.{'\n'}Если ничего не происходит — переключитесь на «Город»
+              </div>
+            )}
           </div>
         )}
 
@@ -1197,14 +1378,20 @@ export default function PrayerPage() {
           </div>
         )}
 
-        {error && mode === 'auto' && (
+        {error && (
           <div style={s.errorBox}>
-            <div style={{ fontSize:40 }}>📍</div>
-            <div style={{ fontSize:16, color:'var(--text)', fontWeight:600 }}>{error}</div>
-            <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center' }}>
-              Разрешите доступ к геолокации в настройках браузера и обновите страницу, или переключитесь в режим «Город»
+            <div style={{ fontSize:48 }}>{error === 'geo_blocked' ? '📍' : '🌐'}</div>
+            <div style={{ fontSize:16, color:'var(--text)', fontWeight:600 }}>
+              {error === 'geo_blocked' ? 'Нет доступа к геолокации' : 'Не удалось загрузить времена намаза'}
             </div>
-            <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город</button>
+            <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6 }}>
+              Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.
+            </div>
+            <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город вручную</button>
+            <button style={{ ...s.enableBtn, background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', marginTop:0 }}
+              onClick={() => mode === 'auto' ? loadByGeo() : switchMode(mode)}>
+              🔄 Попробовать снова
+            </button>
           </div>
         )}
 
@@ -1279,14 +1466,6 @@ export default function PrayerPage() {
             <div style={s.notifCard}>
               <div style={s.notifTop}>
                 <div style={s.notifTitle}>🔔 Напоминания</div>
-                {!notifOk && (
-                  <button style={s.enableBtn} onClick={async () => {
-                    const ok = await requestNotifPerm(); setNotifOk(ok)
-                  }}>
-                    Включить
-                  </button>
-                )}
-                {notifOk && <span style={s.notifOn}>✓ включены</span>}
               </div>
 
               <div style={s.notifDesc}>За сколько минут до намаза напоминать:</div>
@@ -1295,20 +1474,15 @@ export default function PrayerPage() {
                 {[10, 20, 30].map(min => (
                   <button key={min} style={{
                     ...s.remBtn,
-                    background: remind.includes(min) ? 'rgba(201,168,76,.2)' : 'var(--bg-card)',
-                    border: remind.includes(min) ? '1px solid rgba(201,168,76,.5)' : '1px solid var(--border)',
-                    color: remind.includes(min) ? 'var(--gold)' : 'var(--text-muted)',
+                    background: remind.includes(min) ? 'rgba(72,199,120,.15)' : 'var(--bg-card)',
+                    border: remind.includes(min) ? '1.5px solid #48c778' : '1px solid var(--border)',
+                    color: remind.includes(min) ? '#48c778' : 'var(--text-muted)',
+                    fontWeight: remind.includes(min) ? 600 : 400,
                   }} onClick={() => toggleRemind(min)}>
                     {remind.includes(min) ? '✓ ' : ''}{min} мин
                   </button>
                 ))}
               </div>
-
-              {!notifOk && (
-                <div style={s.notifHint}>
-                  Разрешите уведомления чтобы не пропускать намаз
-                </div>
-              )}
             </div>
 
             {/* ── Настройки расчёта ── */}
@@ -1332,7 +1506,7 @@ export default function PrayerPage() {
 
                   {/* Подсказка */}
                   <div style={s.tipBox}>
-                    💡 Сравните времена ниже с расписанием вашей местной мечети и подберите метод + углы, при которых они совпадают. Это нужно сделать один раз — настройки сохранятся.
+                    💡 Если время намаза не совпадает с вашей мечетью — выберите метод <b>Россия/СНГ (САМР)</b> и подберите углы Фаджр и Иша вручную до совпадения. Настройки сохраняются автоматически.
                   </div>
 
                   {/* Метод */}
@@ -1424,27 +1598,38 @@ export default function PrayerPage() {
       </div>
 
       {showTasbih && (
-        <div style={s.tasbihOverlay}>
-          <div style={s.tasbihOverlayHead}>
-            <button style={s.tasbihClose} onClick={() => setShowTasbih(false)}>✕</button>
-          </div>
-          <div style={s.tasbihOverlayBody}>
-            <div style={s.tasbihInner}>
-              <Tasbih />
+        <div style={s.modalBackdrop} onClick={() => setShowTasbih(false)}>
+          <div style={s.modalSheet} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHandle} />
+            <div style={s.tasbihOverlayHead}>
+              <button style={s.tasbihClose} onClick={() => setShowTasbih(false)}>✕</button>
+            </div>
+            <div style={s.tasbihOverlayBody}>
+              <div style={s.tasbihInner}>
+                <Tasbih />
+              </div>
             </div>
           </div>
         </div>
       )}
 
       {showQibla && (
-        <div style={s.tasbihOverlay}>
-          <div style={s.tasbihOverlayHead}>
-            <button style={s.tasbihClose} onClick={() => setShowQibla(false)}>✕</button>
-          </div>
-          <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
-            <Qibla initLat={location?.lat} initLon={location?.lon} />
+        <div style={s.modalBackdrop} onClick={() => setShowQibla(false)}>
+          <div style={s.modalSheet} onClick={e => e.stopPropagation()}>
+            <div style={s.modalHandle} />
+            <div style={s.tasbihOverlayHead}>
+              <div style={{ fontSize:18, fontWeight:700, color:'var(--text)' }}>Кибла</div>
+              <button style={s.tasbihClose} onClick={() => setShowQibla(false)}>✕</button>
+            </div>
+            <div style={{ flex:1, overflowY:'auto' }}>
+              <Qibla initLat={location?.lat} initLon={location?.lon} />
+            </div>
           </div>
         </div>
+      )}
+
+      {showCalendar && (
+        <PrayerCalendar user={user} onClose={() => setShowCalendar(false)} />
       )}
 
       {rewardIdx !== null && (
@@ -1491,10 +1676,22 @@ const s = {
     background:'rgba(201,168,76,.1)', border:'1px solid rgba(201,168,76,.3)',
     color:'var(--gold)', fontSize:13, fontWeight:600, cursor:'pointer',
     fontFamily:'var(--font-ui)', outline:'none' },
-  tasbihOverlay: { position:'fixed', inset:0, zIndex:90, background:'var(--bg)',
-    display:'flex', flexDirection:'column', overflowY:'auto' },
+  modalBackdrop: {
+    position:'fixed', inset:0, zIndex:90,
+    background:'rgba(0,0,0,.6)', backdropFilter:'blur(4px)',
+    display:'flex', flexDirection:'column', justifyContent:'flex-end',
+  },
+  modalSheet: {
+    background:'var(--bg-surface)', borderRadius:'20px 20px 0 0',
+    maxHeight:'92dvh', display:'flex', flexDirection:'column',
+    border:'1px solid var(--border)', borderBottom:'none',
+  },
+  modalHandle: {
+    width:40, height:4, borderRadius:2,
+    background:'rgba(255,255,255,.2)', margin:'10px auto 4px', flexShrink:0,
+  },
   tasbihOverlayHead: { display:'flex', alignItems:'center', justifyContent:'flex-end',
-    padding:'16px 16px 0' },
+    padding:'4px 16px 0' },
   tasbihClose: { width:36, height:36, borderRadius:'50%', border:'1px solid var(--border)',
     background:'var(--bg-card)', color:'var(--text)', fontSize:16, cursor:'pointer',
     display:'flex', alignItems:'center', justifyContent:'center', outline:'none',

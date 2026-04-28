@@ -1,4 +1,6 @@
 import { useNavigate, useLocation } from 'react-router-dom'
+import { useContext } from 'react'
+import { ChatUnreadCtx } from '../../App'
 
 const TABS = [
   { path: '/home',    icon: '⌂',  label: 'Главная' },
@@ -11,6 +13,7 @@ const TABS = [
 export default function BottomNav() {
   const navigate  = useNavigate()
   const { pathname } = useLocation()
+  const { unread } = useContext(ChatUnreadCtx)
 
   const active = TABS.find(t => pathname === t.path || pathname.startsWith(t.path + '/'))?.path || '/home'
 
@@ -18,16 +21,19 @@ export default function BottomNav() {
     <div style={s.nav}>
       {TABS.map(tab => {
         const isActive = active === tab.path
+        const showBadge = tab.path === '/chat' && unread > 0 && !isActive
         return (
           <button
             key={tab.path}
-            style={{
-              ...s.btn,
-              color: isActive ? 'var(--gold)' : 'var(--text-dim)'
-            }}
+            style={{ ...s.btn, color: isActive ? 'var(--gold)' : 'var(--text-dim)' }}
             onClick={() => navigate(tab.path)}
           >
-            <span style={{ fontSize: 21, lineHeight: 1 }}>{tab.icon}</span>
+            <div style={{ position: 'relative', lineHeight: 1 }}>
+              <span style={{ fontSize: 21, lineHeight: 1 }}>{tab.icon}</span>
+              {showBadge && (
+                <span style={s.badge}>{unread > 99 ? '99+' : unread}</span>
+              )}
+            </div>
             <span style={{
               fontSize: 10, fontWeight: isActive ? 600 : 400,
               color: isActive ? 'var(--gold)' : 'var(--text-dim)'
@@ -61,5 +67,13 @@ const s = {
     position: 'absolute', bottom: 2, left: '50%', transform: 'translateX(-50%)',
     width: 4, height: 4, borderRadius: '50%',
     background: 'var(--gold)', boxShadow: '0 0 6px rgba(201,168,76,.7)'
+  },
+  badge: {
+    position: 'absolute', top: -6, right: -8,
+    minWidth: 16, height: 16, borderRadius: 8,
+    background: '#e84393', color: '#fff',
+    fontSize: 9, fontWeight: 700, lineHeight: '16px',
+    textAlign: 'center', padding: '0 3px',
+    pointerEvents: 'none',
   }
 }

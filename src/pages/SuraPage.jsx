@@ -4,8 +4,11 @@ import { SURAS } from '../data/suras'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../supabase/client'
 import { fetchSura } from '../utils/fetchVerse'
+import { addNur } from '../utils/nur'
 
 const BISMILLAH = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
+const BISMILLAH_TRANSLIT_EN = 'Bismillāhi r-raḥmāni r-raḥīm'
+const BISMILLAH_TRANSLIT_RU = 'Бисмилляхи р-рахмани р-рахим'
 
 // Конвертация латинской транскрипции в кириллицу
 function latinToCyrillic(text) {
@@ -51,48 +54,20 @@ function getTranslit(text, language) {
 }
 
 const RECITERS = [
-  { id: 'ar.alafasy',        cdnId: 7,  name: 'Мишари Алафаси' },
-  { id: 'ar.abdullahbasfar', cdnId: 9,  name: 'Абдулла Басфар' },
-  { id: 'ar.husary',         cdnId: 5,  name: 'Махмуд Хусари'  },
+  { id: 'Alafasy_128kbps',          name: 'Мишари Алафаси' },
+  { id: 'Abdullah_Basfar_192kbps',  name: 'Абдулла Басфар' },
+  { id: 'Husary_128kbps',           name: 'Махмуд Хусари'  },
+  { id: 'Minshawy_Murattal_128kbps',name: 'Мухаммад Минщауи' },
 ]
 
-// Один аудиофайл на всю суру
-function suraAudioUrl(reciterId, suraId) {
-  return `https://cdn.islamic.network/quran/audio-surah/128/${reciterId}/${suraId}.mp3`
-}
+function pad(n, len) { return String(n).padStart(len, '0') }
 
-// Временны́е метки аятов из qurancdn (в секундах, нарастающим итогом)
-async function fetchVerseTimings(suraId, cdnId) {
-  try {
-    const res = await fetch(
-      `https://api.qurancdn.com/api/qdc/audio/reciters/${cdnId}/audio_files` +
-      `?chapter_number=${suraId}&segments=true`,
-      { signal: AbortSignal.timeout(8000) }
-    )
-    if (!res.ok) return null
-    const { audio_files } = await res.json()
-    if (!audio_files?.length) return null
+const AUDIO_PROXY = 'https://bwnzfyxcgzscghowpqfn.supabase.co/functions/v1/audio-proxy?url='
 
-    // Собираем длительность каждого аята (мс → с)
-    const durations = {}
-    for (const f of audio_files) {
-      const vn = parseInt(f.verse_key.split(':')[1])
-      if (Array.isArray(f.segments) && f.segments.length) {
-        durations[vn] = Math.max(...f.segments.map(([,, e]) => e)) / 1000
-      }
-    }
-
-    // Строим нарастающие временны́е метки начала каждого аята
-    // Для сур кроме 1 и 9 добавляем ~3с на Басмалу
-    let offset = (suraId !== 1 && suraId !== 9) ? 3.0 : 0
-    const starts = {}
-    for (const f of audio_files) {
-      const vn = parseInt(f.verse_key.split(':')[1])
-      starts[vn] = offset
-      offset += durations[vn] ?? 4.0
-    }
-    return starts  // { 1: 0.0, 2: 4.2, 3: 8.7, ... }
-  } catch { return null }
+// Аудио одного аята через прокси (обход блокировок браузеров)
+function ayatAudioUrl(reciterId, suraId, ayatNum) {
+  const url = `https://everyayah.com/data/${reciterId}/${pad(suraId, 3)}${pad(ayatNum, 3)}.mp3`
+  return `${AUDIO_PROXY}${encodeURIComponent(url)}`
 }
 
 function fmtTime(sec) {
@@ -104,92 +79,99 @@ function fmtTime(sec) {
 
 // ── Плеер ─────────────────────────────────────────────────────
 function AudioPlayer({ suraId, verses, onVerseChange }) {
-  const [reciter,  setReciter]  = useState(RECITERS[0])
-  const [playing,  setPlaying]  = useState(false)
-  const [loading,  setLoading]  = useState(false)
-  const [current,  setCurrent]  = useState(0)
-  const [duration, setDuration] = useState(0)
-  const [showList, setShowList] = useState(false)
-  const [timings,  setTimings]  = useState(null)  // { verseNum: startSec }
+  const [reciter,    setReciter]    = useState(RECITERS[0])
+  const [playing,    setPlaying]    = useState(false)
+  const [loading,    setLoading]    = useState(false)
+  const [ayatIdx,    setAyatIdx]    = useState(0)   // индекс текущего аята в verses[]
+  const [showList,   setShowList]   = useState(false)
+  const [errMsg,     setErrMsg]     = useState('')
 
-  const audioRef   = useRef()
-  const timingsRef = useRef(null)  // актуальные тайминги без ре-рендера
+  const audioRef  = useRef()
+  const playingRef = useRef(false)  // без ре-рендера для обработчика onEnded
 
-  // Загружаем тайминги в фоне при смене суры / чтеца
+  // Сброс при смене суры / чтеца
   useEffect(() => {
-    setTimings(null); timingsRef.current = null
-    fetchVerseTimings(suraId, reciter.cdnId).then(t => {
-      setTimings(t); timingsRef.current = t
-    })
-  }, [suraId, reciter.cdnId])
+    stop()
+    setAyatIdx(0)
+    setErrMsg('')
+  }, [suraId, reciter.id])
 
-  // Сброс плеера при смене суры / чтеца
-  useEffect(() => {
+  function stop() {
+    playingRef.current = false  // сначала сбрасываем флаг — иначе src='' триггерит onError
     const a = audioRef.current
     if (a) { a.pause(); a.src = '' }
-    setPlaying(false); setCurrent(0); setDuration(0)
+    setPlaying(false)
+    setLoading(false)
     onVerseChange(null)
-  }, [suraId, reciter.id])
+  }
+
+  function playAyat(idx) {
+    if (!verses.length) return
+    const safeIdx = Math.max(0, Math.min(idx, verses.length - 1))
+    const verse = verses[safeIdx]
+    const a = audioRef.current
+    if (!a) return
+
+    a.src = ayatAudioUrl(reciter.id, suraId, verse.number)
+    setLoading(true)
+    setErrMsg('')
+    setAyatIdx(safeIdx)
+    onVerseChange(verse.number)
+    playingRef.current = true
+
+    a.load()
+    a.play()
+      .then(() => { setPlaying(true); setLoading(false) })
+      .catch(() => { setLoading(false); setPlaying(false) })
+  }
 
   function togglePlay() {
     const a = audioRef.current
     if (!a) return
     if (playing) {
-      a.pause(); setPlaying(false)
+      a.pause()
+      setPlaying(false)
+      playingRef.current = false
+    } else if (a.src && a.paused && a.readyState >= 2) {
+      a.play().then(() => setPlaying(true)).catch(() => {})
+      playingRef.current = true
     } else {
-      if (!a.src || a.src === window.location.href) {
-        a.src = suraAudioUrl(reciter.id, suraId)
-        a.load()
-      }
-      setLoading(true)
-      a.play()
-        .then(() => { setPlaying(true); setLoading(false) })
-        .catch(() => setLoading(false))
+      playAyat(ayatIdx)
     }
   }
 
-  function onTimeUpdate() {
-    const a = audioRef.current
-    if (!a) return
-    const t = a.currentTime
-    setCurrent(t)
-
-    // Находим текущий аят по таймингам
-    const tm = timingsRef.current
-    if (!tm || !verses.length) return
-    let activeVerse = verses[0].number
-    for (const v of verses) {
-      if (tm[v.number] !== undefined && t >= tm[v.number]) {
-        activeVerse = v.number
-      }
+  function onEnded() {
+    if (!playingRef.current) return
+    const nextIdx = ayatIdx + 1
+    if (nextIdx < verses.length) {
+      playAyat(nextIdx)
+    } else {
+      stop()
+      setAyatIdx(0)
     }
-    onVerseChange(activeVerse)
   }
 
-  function onLoadedMetadata() { setDuration(audioRef.current?.duration || 0); setLoading(false) }
-  function onCanPlay()        { setLoading(false) }
-  function onEnded()          { setPlaying(false); setCurrent(0); onVerseChange(null) }
-
-  function seek(e) {
-    const a = audioRef.current
-    if (!a || !duration) return
-    const rect  = e.currentTarget.getBoundingClientRect()
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-    a.currentTime = ratio * duration
-    setCurrent(a.currentTime)
+  function onError() {
+    if (!playingRef.current) return  // игнорируем ошибки при сбросе src
+    setLoading(false)
+    setPlaying(false)
+    playingRef.current = false
+    setErrMsg('Не удалось загрузить аят — проверь соединение')
   }
 
-  const progress = duration ? (current / duration) * 100 : 0
+  function prevAyat() { if (ayatIdx > 0) playAyat(ayatIdx - 1) }
+  function nextAyat() { if (ayatIdx < verses.length - 1) playAyat(ayatIdx + 1) }
+
+  const verseNum = verses[ayatIdx]?.number ?? 1
 
   return (
     <div style={p.wrap}>
-      <audio
-        ref={audioRef}
-        preload="none"
-        onTimeUpdate={onTimeUpdate}
-        onLoadedMetadata={onLoadedMetadata}
-        onCanPlay={onCanPlay}
+      <audio ref={audioRef} preload="none"
         onEnded={onEnded}
+        onError={onError}
+        onCanPlay={() => setLoading(false)}
+        onWaiting={() => setLoading(true)}
+        onPlaying={() => { setPlaying(true); setLoading(false) }}
       />
 
       <div style={p.top}>
@@ -199,13 +181,23 @@ function AudioPlayer({ suraId, verses, onVerseChange }) {
           <span style={p.arrow}>{showList ? '▲' : '▼'}</span>
         </button>
 
-        {!timings && playing && (
-          <span style={p.hint}>синхр...</span>
-        )}
+        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+          <button style={p.skipBtn} onClick={prevAyat} disabled={ayatIdx === 0}>⏮</button>
+          <button style={{ ...p.playBtn, opacity: loading ? 0.7 : 1 }} onClick={togglePlay}>
+            {loading ? <span style={p.spinner} /> : playing ? '⏸' : '▶'}
+          </button>
+          <button style={p.skipBtn} onClick={nextAyat} disabled={ayatIdx >= verses.length - 1}>⏭</button>
+        </div>
+      </div>
 
-        <button style={{ ...p.playBtn, opacity: loading ? 0.6 : 1 }} onClick={togglePlay}>
-          {loading ? <span style={p.spinner} /> : playing ? '⏸' : '▶'}
-        </button>
+      {errMsg && <div style={p.errMsg}>{errMsg}</div>}
+
+      {/* Прогресс аятов */}
+      <div style={p.ayatBar}>
+        <span style={p.ayatLabel}>Аят {verseNum} / {verses.length}</span>
+        <div style={p.ayatTrack}>
+          <div style={{ ...p.ayatFill, width: `${verses.length > 1 ? (ayatIdx / (verses.length - 1)) * 100 : 100}%` }} />
+        </div>
       </div>
 
       {showList && (
@@ -223,17 +215,6 @@ function AudioPlayer({ suraId, verses, onVerseChange }) {
         </div>
       )}
 
-      <div style={p.progressWrap} onClick={seek}>
-        <div style={p.progressTrack}>
-          <div style={{ ...p.progressFill, width: `${progress}%` }} />
-          <div style={{ ...p.progressThumb, left: `${progress}%` }} />
-        </div>
-      </div>
-
-      <div style={p.times}>
-        <span>{fmtTime(current)}</span>
-        <span>{fmtTime(duration)}</span>
-      </div>
     </div>
   )
 }
@@ -254,15 +235,55 @@ export default function SuraPage() {
 
   const tid      = profile?.translation_id || 131
   const language = profile?.language || 'ru'
-  const verseRefs = useRef({})
+  const verseRefs   = useRef({})
+  const lastVerseRef = useRef(null)
+  const markedRead  = useRef(false)
 
   useEffect(() => {
     setLoading(true); setError(false)
     fetchSura(id, tid).then(data => {
-      if (data) { setVerses(data); setLoading(false) }
-      else       { setError(true); setLoading(false) }
+      if (data) {
+        setVerses(data)
+        setLoading(false)
+        if (sura) {
+          localStorage.setItem('quran_last_read', JSON.stringify({
+            suraId: sura.id,
+            ru:     sura.ru,
+            ar:     sura.ar,
+            ayats:  sura.ayats,
+            date:   new Date().toISOString(),
+          }))
+          markedRead.current = false // сбрасываем при каждой новой суре
+        }
+      }
+      else { setError(true); setLoading(false) }
     })
   }, [id, tid])
+
+  // Засчитываем суру как прочитанную когда последний аят стал виден
+  useEffect(() => {
+    if (!verses.length || !sura) return
+    const el = lastVerseRef.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !markedRead.current) {
+          markedRead.current = true
+          try {
+            const read = JSON.parse(localStorage.getItem('read_surahs') || '[]')
+            if (!read.includes(sura.id)) {
+              read.push(sura.id)
+              localStorage.setItem('read_surahs', JSON.stringify(read))
+              addNur(5, user, profile, setProfile)
+            }
+          } catch {}
+        }
+      },
+      { threshold: 0.5 }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [verses.length, sura?.id])
 
   // Авто-прокрутка к читаемому аяту
   useEffect(() => {
@@ -271,15 +292,27 @@ export default function SuraPage() {
   }, [playingVerse])
 
   async function toggleLike(key) {
-    if (liked.has(key)) return
-    const next = new Set(liked); next.add(key)
-    setLiked(next); setNurAnim(key)
-    setTimeout(() => setNurAnim(null), 1400)
-    const newNur = (profile?.nur || 10) + 10
-    setProfile(p => ({ ...p, nur: newNur }))
-    if (user) {
-      await supabase.from('liked_verses').insert({ user_id: user.id, verse_key: key })
-      await supabase.from('profiles').update({ nur: newNur }).eq('id', user.id)
+    if (liked.has(key)) {
+      // Снять галочку — вычесть 10 нур
+      const next = new Set(liked); next.delete(key)
+      setLiked(next)
+      const newNur = Math.max(0, (profile?.nur || 0) - 10)
+      setProfile(p => ({ ...p, nur: newNur }))
+      if (user) {
+        await supabase.from('liked_verses').delete().eq('user_id', user.id).eq('verse_key', key)
+        await supabase.from('profiles').update({ nur: newNur }).eq('id', user.id)
+      }
+    } else {
+      // Поставить галочку — начислить 10 нур
+      const next = new Set(liked); next.add(key)
+      setLiked(next); setNurAnim(key)
+      setTimeout(() => setNurAnim(null), 1400)
+      const newNur = (profile?.nur || 0) + 10
+      setProfile(p => ({ ...p, nur: newNur }))
+      if (user) {
+        await supabase.from('liked_verses').insert({ user_id: user.id, verse_key: key })
+        await supabase.from('profiles').update({ nur: newNur }).eq('id', user.id)
+      }
     }
   }
 
@@ -290,7 +323,7 @@ export default function SuraPage() {
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.back} onClick={() => navigate(-1)}>← Назад</button>
+        <button style={s.back} onClick={() => navigate('/quran')}>← Назад</button>
         <div style={s.headerCenter}>
           <div style={s.suraAr} className="arabic">{sura.ar}</div>
           <div style={s.suraRu}>{sura.ru}</div>
@@ -306,7 +339,12 @@ export default function SuraPage() {
 
       <div style={s.scroll} className="scroll-y">
         {sura.id !== 9 && (
-          <div style={s.bismillah} className="arabic">{BISMILLAH}</div>
+          <div style={s.bismillahWrap}>
+            <div style={s.bismillah} className="arabic">{BISMILLAH}</div>
+            <div style={s.bismillahTranslit}>
+              {language === 'en' ? BISMILLAH_TRANSLIT_EN : BISMILLAH_TRANSLIT_RU}
+            </div>
+          </div>
         )}
         {loading && (
           <div style={s.loadWrap}>
@@ -327,10 +365,13 @@ export default function SuraPage() {
             }}>Повторить</button>
           </div>
         )}
-        {!loading && !error && verses.map(verse => (
+        {!loading && !error && verses.map((verse, idx) => (
           <VerseCard
             key={verse.number}
-            ref={el => verseRefs.current[verse.number] = el}
+            ref={el => {
+              verseRefs.current[verse.number] = el
+              if (idx === verses.length - 1) lastVerseRef.current = el
+            }}
             verse={verse}
             suraId={sura.id}
             language={language}
@@ -393,11 +434,12 @@ const VerseCard = forwardRef(function VerseCard(
           {nurAnim && <div style={v.nurFloat}>+10 нур ✨</div>}
           <button style={{
             ...v.heartBtn,
-            color:       liked ? '#e84393' : 'var(--text-dim)',
-            borderColor: liked ? '#e8439340' : 'var(--border)',
+            color:       liked ? '#48c778' : 'var(--text-dim)',
+            borderColor: liked ? 'rgba(72,199,120,.4)' : 'var(--border)',
+            background:  liked ? 'rgba(72,199,120,.1)' : 'var(--bg-card)',
             animation:   nurAnim ? 'heartBeat .45s ease' : 'none'
           }} onClick={onLike}>
-            {liked ? '♥' : '♡'}
+            {liked ? '✔' : '✔'}
           </button>
         </div>
         <span style={v.ref}>{suraId}:{verse.number}</span>
@@ -409,20 +451,20 @@ const VerseCard = forwardRef(function VerseCard(
 // ── Стили ─────────────────────────────────────────────────────
 const p = {
   wrap: { background: 'rgba(201,168,76,.06)', border: '1px solid rgba(201,168,76,.18)', borderRadius: 14, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 },
-  top:  { display: 'flex', alignItems: 'center', gap: 10 },
+  top:  { display: 'flex', alignItems: 'center', gap: 8 },
   reciterBtn: { flex: 1, display: 'flex', alignItems: 'center', gap: 7, background: 'none', border: 'none', cursor: 'pointer', padding: 0, outline: 'none' },
   reciterName: { fontSize: 13, color: 'var(--gold)', fontWeight: 500, flex: 1, textAlign: 'left' },
   arrow:       { fontSize: 10, color: 'var(--text-muted)' },
-  hint:        { fontSize: 11, color: 'var(--text-dim)', flexShrink: 0 },
   playBtn: { width: 40, height: 40, borderRadius: '50%', flexShrink: 0, background: 'linear-gradient(135deg,#C9A84C,#F0D080)', border: 'none', cursor: 'pointer', fontSize: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#070710', fontWeight: 700, boxShadow: '0 0 14px rgba(201,168,76,.35)', transition: 'opacity .2s' },
+  skipBtn: { width: 32, height: 32, borderRadius: '50%', flexShrink: 0, background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.2)', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gold)', outline: 'none', transition: 'opacity .2s' },
   spinner: { width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(7,7,16,.3)', borderTopColor: '#070710', display: 'inline-block', animation: 'spin .7s linear infinite' },
   reciterList:   { background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden' },
   reciterOption: { display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '10px 14px', border: 'none', cursor: 'pointer', fontFamily: 'var(--font-ui)', fontSize: 13, borderBottom: '1px solid var(--border)', outline: 'none', textAlign: 'left', transition: 'background .15s' },
-  progressWrap:  { cursor: 'pointer', padding: '4px 0' },
-  progressTrack: { height: 3, background: 'rgba(201,168,76,.15)', borderRadius: 2, position: 'relative' },
-  progressFill:  { position: 'absolute', left: 0, top: 0, height: '100%', background: 'linear-gradient(90deg,#C9A84C,#F0D080)', borderRadius: 2, transition: 'width .1s linear' },
-  progressThumb: { position: 'absolute', top: '50%', transform: 'translate(-50%,-50%)', width: 10, height: 10, borderRadius: '50%', background: 'var(--gold)', transition: 'left .1s linear' },
-  times: { display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }
+  ayatBar:  { display: 'flex', alignItems: 'center', gap: 10 },
+  ayatLabel:{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0, minWidth: 72 },
+  ayatTrack:{ flex: 1, height: 3, background: 'rgba(201,168,76,.15)', borderRadius: 2, overflow: 'hidden' },
+  ayatFill: { height: '100%', background: 'linear-gradient(90deg,#C9A84C,#F0D080)', borderRadius: 2, transition: 'width .3s ease' },
+  errMsg:   { fontSize: 12, color: '#ff6b6b', textAlign: 'center', padding: '2px 0' },
 }
 
 const s = {
@@ -434,7 +476,9 @@ const s = {
   suraRu:   { fontSize: 18, fontWeight: 600, color: 'var(--text)' },
   suraMeta: { fontSize: 12, color: 'var(--text-muted)' },
   scroll:   { flex: 1, padding: '0 16px' },
-  bismillah: { fontFamily: "'Scheherazade New', serif", fontSize: 26, color: 'var(--gold-light)', textAlign: 'center', direction: 'rtl', padding: '24px 0 8px', textShadow: '0 0 16px rgba(201,168,76,.25)' },
+  bismillahWrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '24px 0 16px' },
+  bismillah: { fontFamily: "'Scheherazade New', serif", fontSize: 'calc(var(--arabic-size) + 2px)', color: 'var(--arabic-color)', textAlign: 'center', direction: 'rtl', textShadow: '0 0 16px rgba(201,168,76,.25)' },
+  bismillahTranslit: { fontSize: 14, color: 'rgba(201,168,76,.75)', textAlign: 'center', fontStyle: 'italic', letterSpacing: '.03em' },
   loadWrap:  { display: 'flex', gap: 10, justifyContent: 'center', padding: '60px 0' },
   loadDot:   { width: 10, height: 10, borderRadius: '50%', background: 'var(--gold-dim)', animation: 'dotPulse 1.2s ease-in-out infinite' },
   errorBox:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10, padding: '50px 20px', textAlign: 'center' },
@@ -450,7 +494,7 @@ const v = {
   numBadge: { flexShrink: 0, width: 30, height: 30, borderRadius: 8, background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'var(--gold)', transition: 'all .3s' },
   numBadgeActive: { background: 'rgba(201,168,76,.3)', border: '1px solid rgba(201,168,76,.6)', fontSize: 15 },
   line: { flex: 1, height: 1, background: 'var(--border)', transition: 'background .3s' },
-  arabic: { fontFamily: "'Scheherazade New', serif", fontSize: 24, lineHeight: 2, color: 'var(--gold-light)', textAlign: 'right', direction: 'rtl', transition: 'color .3s, text-shadow .3s' },
+  arabic: { fontFamily: "'Scheherazade New', serif", fontSize: 'var(--arabic-size)', lineHeight: 2, color: 'var(--arabic-color)', textAlign: 'right', direction: 'rtl', transition: 'color .3s, text-shadow .3s' },
   arabicActive: { color: 'var(--gold)', textShadow: '0 0 24px rgba(201,168,76,.4)' },
   transliteration: { fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.7, fontStyle: 'italic', paddingLeft: 2 },
   translation: { fontSize: 14, color: 'var(--text)', lineHeight: 1.75, borderLeft: '2px solid rgba(201,168,76,.25)', paddingLeft: 12, transition: 'border .3s' },

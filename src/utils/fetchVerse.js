@@ -1,4 +1,4 @@
-import { FALLBACK_TRANSLATIONS, ARABIC_TEXTS } from '../data/verses'
+import { FALLBACK_TRANSLATIONS, ARABIC_TEXTS, TRANSLITERATIONS } from '../data/verses'
 
 // alquran.cloud — бесплатный API, не требует авторизации
 const BASE = 'https://api.alquran.cloud/v1'
@@ -29,18 +29,19 @@ export async function fetchVerse(key, translationId = 131) {
     const [arData, trData] = json.data
 
     return {
-      arabic:      arData?.text || ARABIC_TEXTS[key] || '',
-      translation: trData?.text || FALLBACK_TRANSLATIONS[key] || '',
-      ref:         key,
-      fromCache:   false
+      arabic:          arData?.text || ARABIC_TEXTS[key] || '',
+      transliteration: TRANSLITERATIONS[key] || '',
+      translation:     trData?.text || FALLBACK_TRANSLATIONS[key] || '',
+      ref:             key,
+      fromCache:       false
     }
   } catch {
-    // Интернета нет — используем встроенные данные
     return {
-      arabic:      ARABIC_TEXTS[key]          || '',
-      translation: FALLBACK_TRANSLATIONS[key] || '',
-      ref:         key,
-      fromCache:   true
+      arabic:          ARABIC_TEXTS[key]          || '',
+      transliteration: TRANSLITERATIONS[key]      || '',
+      translation:     FALLBACK_TRANSLATIONS[key] || '',
+      ref:             key,
+      fromCache:       true
     }
   }
 }
@@ -60,12 +61,26 @@ export async function fetchSura(chapterId, translationId = 131) {
     const json = await res.json()
     const [arEdition, tlEdition, trEdition] = json.data
 
-    return arEdition.ayahs.map((ayah, i) => ({
-      number:          ayah.numberInSurah,
-      arabic:          ayah.text,
-      transliteration: tlEdition?.ayahs?.[i]?.text || '',
-      translation:     trEdition?.ayahs?.[i]?.text || ''
-    }))
+    const BISMILLAH_PREFIX = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
+    const BISMILLAH_PREFIX2 = 'بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ'
+
+    return arEdition.ayahs.map((ayah, i) => {
+      let arabic = ayah.text
+      // Убираем Бисмиллу из начала первого аята (кроме сур 1 и 9, где она часть текста)
+      if (i === 0 && chapterId !== 1 && chapterId !== 9) {
+        if (arabic.startsWith(BISMILLAH_PREFIX)) {
+          arabic = arabic.slice(BISMILLAH_PREFIX.length).trimStart()
+        } else if (arabic.startsWith(BISMILLAH_PREFIX2)) {
+          arabic = arabic.slice(BISMILLAH_PREFIX2.length).trimStart()
+        }
+      }
+      return {
+        number:          ayah.numberInSurah,
+        arabic,
+        transliteration: tlEdition?.ayahs?.[i]?.text || '',
+        translation:     trEdition?.ayahs?.[i]?.text || ''
+      }
+    })
   } catch {
     return null
   }

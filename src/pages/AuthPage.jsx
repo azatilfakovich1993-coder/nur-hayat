@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../hooks/useAuth'
 import RegisterStep1 from '../components/auth/RegisterStep1'
-import RegisterStep2 from '../components/auth/RegisterStep2'
+import RegisterStep3Gender from '../components/auth/RegisterStep3Gender'
 import RegisterStep3 from '../components/auth/RegisterStep3'
 
 export default function AuthPage() {
@@ -31,10 +31,13 @@ export default function AuthPage() {
   }
 
   /* ── Регистрация — шаги ── */
-  function step1Next(data) { setRegData(p => ({ ...p, ...data })); setRegStep(2) }
-  function step2Next(data) { setRegData(p => ({ ...p, ...data })); setRegStep(3) }
+  function step1Next(data) {
+    setRegData(p => ({ ...p, ...data, language: 'ru', translationId: 131 }))
+    setRegStep(3)
+  }
+  function step3Next(data) { setRegData(p => ({ ...p, ...data })); setRegStep(4) }
 
-  async function step3Next(data) {
+  async function step4Next(data) {
     const full = { ...regData, ...data }
     setError(''); setLoading(true)
 
@@ -54,6 +57,7 @@ export default function AuthPage() {
       language:       full.language       || 'ru',
       translation_id: full.translationId  || 131,
       level:          full.level          || 'seeker',
+      gender:         full.gender         || null,
       nur:            10,
       streak:         1,
       onboarded:      false
@@ -111,13 +115,13 @@ export default function AuthPage() {
           ) : (
             <div style={s.form}>
               <div className="progress-dots">
-                {[1,2,3].map(n => (
+                {[1,3,4].map(n => (
                   <div key={n} className={`dot ${regStep === n ? 'active' : ''}`} />
                 ))}
               </div>
               {regStep === 1 && <RegisterStep1 data={regData} onNext={step1Next} />}
-              {regStep === 2 && <RegisterStep2 data={regData} onNext={step2Next} onBack={() => setRegStep(1)} />}
-              {regStep === 3 && <RegisterStep3 onNext={step3Next} onBack={() => setRegStep(2)} loading={loading} />}
+              {regStep === 3 && <RegisterStep3Gender data={regData} onNext={step3Next} onBack={() => setRegStep(1)} />}
+              {regStep === 4 && <RegisterStep3 onNext={step4Next} onBack={() => setRegStep(3)} loading={loading} />}
               {error && <div className="error-msg">{error}</div>}
             </div>
           )}

@@ -1,204 +1,138 @@
-import { useState, useRef } from 'react'
+import { useState } from 'react'
 
-const VERSE = {
-  arabic:      'وَمَنْ يَعْمَلْ مِثْقَالَ ذَرَّةٍ خَيْرًا يَرَهُ',
-  translation: 'Кто сделает добро весом с пылинку — увидит его.',
-  ref:         '99:7'
-}
+const LEVELS = [
+  {
+    id: 'seeker',
+    emoji: '🌱',
+    title: 'Только начинаю',
+    sub: 'Знакомлюсь с исламом',
+    desc: 'Получишь пошаговый путь новичка — от основ до первого намаза',
+    color: '#2D6A4F',
+    accent: 'rgba(45,106,79,.2)',
+    border: 'rgba(45,106,79,.5)',
+  },
+  {
+    id: 'growing',
+    emoji: '🌿',
+    title: 'Мусульманин',
+    sub: 'Хочу углубить знания',
+    desc: 'Откроется раздел Знания: Дуа, Азкар, Пророки, Глоссарий, 99 имён',
+    color: '#40916C',
+    accent: 'rgba(64,145,108,.2)',
+    border: 'rgba(64,145,108,.5)',
+  },
+  {
+    id: 'practicing',
+    emoji: '🌳',
+    title: 'Практикующий',
+    sub: 'Ищу единомышленников',
+    desc: 'Акцент на трекере намазов и живом сообществе',
+    color: '#52B788',
+    accent: 'rgba(82,183,136,.2)',
+    border: 'rgba(82,183,136,.5)',
+  },
+]
 
-function Spark({ x, y, color, angle, dist }) {
-  return (
-    <div style={{
-      position: 'absolute',
-      left: x, top: y,
-      width: 6, height: 6,
-      borderRadius: '50%',
-      background: color,
-      boxShadow: `0 0 6px ${color}`,
-      '--tx': `${Math.cos(angle) * dist}px`,
-      '--ty': `${Math.sin(angle) * dist}px`,
-      animation: 'sparkle 0.7s ease-out forwards',
-      pointerEvents: 'none'
-    }} />
-  )
-}
+export default function OnboardStep2({ onNext, level, onLevelChange }) {
+  const [selected, setSelected] = useState(level)
 
-export default function OnboardStep2({ onNext }) {
-  const [liked,   setLiked]   = useState(false)
-  const [sparks,  setSparks]  = useState([])
-  const [nurAnim, setNurAnim] = useState(false)
-  const btnRef = useRef()
-
-  function handleHeart() {
-    if (liked) return
-
-    setLiked(true)
-    setNurAnim(true)
-
-    // Generate sparks around the button
-    const newSparks = Array.from({ length: 18 }, (_, i) => ({
-      id: i,
-      x: '50%', y: '50%',
-      color: i % 3 === 0 ? '#F0D080' : i % 3 === 1 ? '#C9A84C' : '#fff8dc',
-      angle: (i / 18) * Math.PI * 2,
-      dist: 28 + Math.random() * 32
-    }))
-    setSparks(newSparks)
-    setTimeout(() => setSparks([]), 800)
-    setTimeout(() => setNurAnim(false), 1200)
+  function handleSelect(id) {
+    setSelected(id)
+    onLevelChange(id)
   }
+
+  const current = LEVELS.find(l => l.id === selected) || LEVELS[0]
 
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <p style={s.hint}>Если аят тронул — нажми на сердце</p>
+        <div style={s.title}>Кто ты?</div>
+        <div style={s.sub}>Выбери — приложение подстроится под тебя</div>
       </div>
 
-      {/* Verse card */}
-      <div style={s.card}>
-        <div style={s.glow} />
-        <div style={s.arabic} className="arabic">{VERSE.arabic}</div>
-        <div style={s.divider} />
-        <div style={s.translation}>{VERSE.translation}</div>
-        <div style={s.ref}>Коран, {VERSE.ref}</div>
+      <div style={s.cards}>
+        {LEVELS.map(lv => {
+          const isActive = selected === lv.id
+          return (
+            <button
+              key={lv.id}
+              style={{
+                ...s.card,
+                background: isActive ? lv.accent : 'var(--bg-card)',
+                border: `1.5px solid ${isActive ? lv.border : 'var(--border)'}`,
+                boxShadow: isActive ? `0 0 16px ${lv.accent}` : 'none',
+              }}
+              onClick={() => handleSelect(lv.id)}
+            >
+              <div style={{ ...s.emojiWrap, background: isActive ? lv.accent : 'rgba(255,255,255,.05)' }}>
+                <span style={s.emoji}>{lv.emoji}</span>
+              </div>
+              <div style={s.cardBody}>
+                <div style={{ ...s.cardTitle, color: isActive ? lv.color : 'var(--text)' }}>{lv.title}</div>
+                <div style={s.cardSub}>{lv.sub}</div>
+              </div>
+              {isActive && (
+                <div style={{ ...s.check, background: lv.color }}>✓</div>
+              )}
+            </button>
+          )
+        })}
       </div>
 
-      {/* Heart button */}
-      <div style={s.heartWrap}>
-        {sparks.map(sp => <Spark key={sp.id} {...sp} />)}
-
-        <button
-          ref={btnRef}
-          style={{
-            ...s.heartBtn,
-            animation: liked ? 'heartBeat 0.5s ease' : 'none',
-            color: liked ? '#e84393' : 'var(--text-muted)'
-          }}
-          onClick={handleHeart}
-        >
-          {liked ? '♥' : '♡'}
-        </button>
-
-        {/* +10 нур float */}
-        {nurAnim && (
-          <div style={s.nurBadge}>+10 нур ✨</div>
-        )}
-      </div>
-
-      {/* Nur counter */}
-      {liked && (
-        <div style={s.nurCounter}>
-          <div style={s.nurDot} />
-          <span style={s.nurLabel}>10 нур</span>
-          <span style={s.nurSub}>твой свет растёт</span>
+      {/* Описание выбранного */}
+      <div style={s.descCard}>
+        <span style={{ fontSize: 18 }}>{current.emoji}</span>
+        <div style={{ flex: 1 }}>
+          <div style={s.descTitle}>Что тебя ждёт:</div>
+          <div style={s.descText}>{current.desc}</div>
         </div>
-      )}
+      </div>
 
-      {liked && (
-        <button
-          className="btn btn-primary"
-          onClick={onNext}
-          style={{ marginTop: 'auto', animation: 'fadeIn 0.5s ease' }}
-        >
-          Дальше →
-        </button>
-      )}
+      <div style={{ flex: 1 }} />
 
-      <style>{`
-        @keyframes sparkle {
-          0%   { transform: translate(0,0) scale(1); opacity:1; }
-          100% { transform: translate(var(--tx),var(--ty)) scale(0); opacity:0; }
-        }
-        @keyframes heartBeat {
-          0%   { transform: scale(1); }
-          30%  { transform: scale(1.5); }
-          60%  { transform: scale(0.88); }
-          100% { transform: scale(1); }
-        }
-        @keyframes floatUp {
-          0%   { opacity:1; transform:translateY(0) scale(1); }
-          100% { opacity:0; transform:translateY(-60px) scale(1.2); }
-        }
-        @keyframes fadeIn {
-          from { opacity:0; transform:translateY(10px); }
-          to   { opacity:1; transform:translateY(0); }
-        }
-      `}</style>
+      <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={onNext}>
+        Это я →
+      </button>
     </div>
   )
 }
 
 const s = {
-  wrap: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, flex: 1 },
-  header: { textAlign: 'center' },
-  hint: { fontSize: 15, color: 'var(--text-muted)', lineHeight: 1.5 },
-  card: {
-    width: '100%',
-    background: 'var(--bg-card)',
-    borderRadius: 'var(--radius-xl)',
-    border: '1px solid rgba(201,168,76,0.2)',
-    padding: 24,
-    display: 'flex', flexDirection: 'column', gap: 14,
-    position: 'relative', overflow: 'hidden',
-    boxShadow: '0 8px 40px rgba(0,0,0,0.3)'
+  wrap: {
+    flex: 1, display: 'flex', flexDirection: 'column', gap: 0,
   },
-  glow: {
-    position: 'absolute', top: -30, right: -30,
-    width: 150, height: 150, borderRadius: '50%',
-    background: 'radial-gradient(circle, rgba(201,168,76,0.15) 0%, transparent 70%)',
-    filter: 'blur(30px)', pointerEvents: 'none'
-  },
-  arabic: {
-    fontFamily: "'Scheherazade New', serif",
-    fontSize: 24, lineHeight: 1.8, color: 'var(--gold-light)',
-    textAlign: 'center', direction: 'rtl'
-  },
-  divider: {
-    height: 1,
-    background: 'linear-gradient(90deg, transparent, rgba(201,168,76,0.4), transparent)'
-  },
-  translation: { fontSize: 15, color: 'var(--text)', lineHeight: 1.7, textAlign: 'center' },
-  ref: { fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' },
+  header: { marginBottom: 20 },
+  title: { fontSize: 24, fontWeight: 800, color: 'var(--text)', marginBottom: 6 },
+  sub: { fontSize: 14, color: 'var(--text-muted)' },
 
-  heartWrap: {
-    position: 'relative',
+  cards: { display: 'flex', flexDirection: 'column', gap: 10 },
+  card: {
+    display: 'flex', alignItems: 'center', gap: 14,
+    padding: '14px 16px', borderRadius: 18,
+    cursor: 'pointer', outline: 'none',
+    fontFamily: 'var(--font-ui)', textAlign: 'left',
+    transition: 'all .2s',
+  },
+  emojiWrap: {
+    width: 48, height: 48, borderRadius: 14, flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    width: 80, height: 80
+    transition: 'background .2s',
   },
-  heartBtn: {
-    width: 70, height: 70, borderRadius: '50%',
-    background: 'var(--bg-card)',
-    border: '2px solid var(--border)',
-    fontSize: 34, cursor: 'pointer', outline: 'none',
+  emoji: { fontSize: 24 },
+  cardBody: { flex: 1 },
+  cardTitle: { fontSize: 15, fontWeight: 700, marginBottom: 2, transition: 'color .2s' },
+  cardSub: { fontSize: 12, color: 'var(--text-muted)' },
+  check: {
+    width: 24, height: 24, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    transition: 'color 0.3s, border-color 0.3s, box-shadow 0.3s',
-    boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+    color: '#fff', fontSize: 13, fontWeight: 700, flexShrink: 0,
   },
-  nurBadge: {
-    position: 'absolute',
-    top: -10, left: '50%', transform: 'translateX(-50%)',
-    background: 'linear-gradient(135deg, #C9A84C, #F0D080)',
-    color: '#070710',
-    fontWeight: 700, fontSize: 14,
-    padding: '4px 12px', borderRadius: 20,
-    whiteSpace: 'nowrap',
-    animation: 'floatUp 1.2s ease-out forwards',
-    pointerEvents: 'none',
-    boxShadow: '0 0 20px rgba(201,168,76,0.5)'
+
+  descCard: {
+    display: 'flex', alignItems: 'flex-start', gap: 12,
+    background: 'rgba(201,168,76,.08)', border: '1px solid rgba(201,168,76,.2)',
+    borderRadius: 14, padding: '14px 16px', marginTop: 16,
   },
-  nurCounter: {
-    display: 'flex', alignItems: 'center', gap: 10,
-    background: 'var(--bg-card)',
-    border: '1px solid rgba(201,168,76,0.2)',
-    borderRadius: 'var(--radius-lg)',
-    padding: '12px 20px',
-    animation: 'fadeIn 0.5s ease'
-  },
-  nurDot: {
-    width: 10, height: 10, borderRadius: '50%',
-    background: 'var(--gold)',
-    boxShadow: '0 0 10px rgba(201,168,76,0.6)'
-  },
-  nurLabel: { fontSize: 16, fontWeight: 600, color: 'var(--gold)' },
-  nurSub: { fontSize: 13, color: 'var(--text-muted)' }
+  descTitle: { fontSize: 11, color: 'var(--gold)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: 4 },
+  descText: { fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 },
 }

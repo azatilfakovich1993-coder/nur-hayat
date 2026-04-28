@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Фон -->
+  <rect width="512" height="512" rx="96" fill="#070710"/>
+
+  <!-- Золотое свечение в центре -->
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#C9A84C" stop-opacity="0.15"/>
+    <stop offset="100%" stop-color="#C9A84C" stop-opacity="0"/>
+  </radialGradient>
+  <rect width="512" height="512" rx="96" fill="url(#glow)"/>
+
+  <!-- Полумесяц -->
+  <g transform="translate(256, 220)">
+    <!-- Большой круг -->
+    <circle cx="0" cy="0" r="105" fill="#C9A84C"/>
+    <!-- Вырез для формы полумесяца -->
+    <circle cx="38" cy="-18" r="88" fill="#070710"/>
+  </g>
+
+  <!-- Звезда рядом с полумесяцем -->
+  <g transform="translate(340, 148) scale(0.85)">
+    <polygon points="0,-22 5,-8 20,-8 9,1 13,15 0,6 -13,15 -9,1 -20,-8 -5,-8"
+      fill="#C9A84C"/>
+  </g>
+
+  <!-- Арабское слово نور (Нур = Свет) -->
+  <text
+    x="256" y="390"
+    text-anchor="middle"
+    font-family="serif"
+    font-size="72"
+    font-weight="bold"
+    fill="#C9A84C"
+    opacity="0.9"
+  >نور</text>
+
+  <!-- Подпись -->
+  <text
+    x="256" y="430"
+    text-anchor="middle"
+    font-family="sans-serif"
+    font-size="22"
+    fill="#C9A84C"
+    opacity="0.5"
+    letter-spacing="4"
+  >HAYAT</text>
+</svg>
