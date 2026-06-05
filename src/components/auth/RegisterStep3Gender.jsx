@@ -18,7 +18,7 @@ const GENDERS = [
 ]
 
 export default function RegisterStep3Gender({ data, onNext, onBack }) {
-  const [selected, setSelected] = useState(data.gender || null)
+  const [selected, setSelected] = useState(data.gender || 'male') // выбрано по умолчанию
 
   return (
     <div style={s.wrap}>

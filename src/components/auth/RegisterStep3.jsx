@@ -25,7 +25,7 @@ const LEVELS = [
 ]
 
 export default function RegisterStep3({ onNext, onBack, loading }) {
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState('seeker') // выбрано по умолчанию
 
   return (
     <div style={s.wrap}>
