@@ -21,6 +21,16 @@ jobs:
       - run: npm install --legacy-peer-deps
 
       - run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://bwnzfyxcgzscghowpqfn.supabase.co
+          VITE_SUPABASE_ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3bnpmeXhjZ3pzY2dob3dwcWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMzMxMDAsImV4cCI6MjA4OTkwOTEwMH0.0M-eXXyaqHZnfOLT0T04T3hCWUE_GuZ-HXE069VDodw
+          VITE_VAPID_PUBLIC_KEY: BPRt4mL268TfF6riuFi0J3XQkZxJsEbkDUNaO8whpmq-3pubOc0HYDsbJn96M0ZndGEmBFy0t2cHteXWB9DphcM
+          VITE_FIREBASE_API_KEY: AIzaSyCqpNsJglbfcu1F6URlMG6ultvESui5Qk4
+          VITE_FIREBASE_AUTH_DOMAIN: nurhayat-78bc5.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: nurhayat-78bc5
+          VITE_FIREBASE_STORAGE_BUCKET: nurhayat-78bc5.firebasestorage.app
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "76970353004"
+          VITE_FIREBASE_APP_ID: 1:76970353004:web:d31dbe432a708788d91349
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
