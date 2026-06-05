@@ -17,6 +17,23 @@
     <link rel="stylesheet" crossorigin href="/nur-hayat/assets/index-B5dTH09l.css">
   <link rel="manifest" href="/nur-hayat/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/nur-hayat/registerSW.js"></script></head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="js-fallback" style="height:100vh;background:#070710;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;font-family:sans-serif">
+        <div style="color:#C9A84C;font-size:20px">نور حياة</div>
+        <div style="color:rgba(255,255,255,0.5);font-size:14px;text-align:center" id="js-status">Загрузка...</div>
+      </div>
+    </div>
+    <script>
+      window.addEventListener('error', function(e) {
+        var el = document.getElementById('js-status');
+        if (el) el.innerHTML = '⚠️ Ошибка JS: ' + (e.message || e) + '<br><small>' + (e.filename || '') + ':' + (e.lineno || '') + '</small>';
+        el.style.color = '#ff6b6b';
+      });
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('js-status');
+        if (el) el.innerHTML = '⚠️ Ошибка: ' + (e.reason?.message || e.reason || 'Unknown') ;
+        el.style.color = '#ff6b6b';
+      });
+    </script>
   </body>
 </html>
