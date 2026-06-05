@@ -104,14 +104,14 @@ function AppShell({ children }) {
 }
 
 class ErrorBoundary extends Component {
-  constructor(props) { super(props); this.state = { error: false } }
-  static getDerivedStateFromError() { return { error: true } }
+  constructor(props) { super(props); this.state = { error: false, msg: '' } }
+  static getDerivedStateFromError(e) { return { error: true, msg: e?.message || String(e) } }
   render() {
     if (this.state.error) return (
       <div style={{ height:'100%', background:'#070710', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:24 }}>
         <div style={{ fontSize:40 }}>🔄</div>
         <div style={{ color:'#C9A84C', fontSize:18, fontWeight:600 }}>Что-то пошло не так</div>
-        <div style={{ color:'rgba(255,255,255,0.5)', fontSize:14, textAlign:'center' }}>Нажми кнопку ниже чтобы перезагрузить</div>
+        <div style={{ color:'rgba(255,255,255,0.5)', fontSize:12, textAlign:'center', wordBreak:'break-all', maxWidth:320 }}>{this.state.msg}</div>
         <button onClick={() => window.location.reload()} style={{ marginTop:8, padding:'12px 32px', background:'#C9A84C', color:'#070710', border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer' }}>
           Перезагрузить
         </button>
