@@ -115,9 +115,14 @@ export function AuthProvider({ children }) {
   }
 
   const logout = async () => {
-    // Сохраняем прогресс перед выходом
-    if (userRef.current) await saveProgress(userRef.current.id)
-    await supabase.auth.signOut()
+    // Сохраняем прогресс перед выходом — не ждём дольше 3 секунд
+    if (userRef.current) {
+      await Promise.race([
+        saveProgress(userRef.current.id),
+        new Promise(r => setTimeout(r, 3000))
+      ])
+    }
+    try { await supabase.auth.signOut() } catch {}
     setUser(null)
     userRef.current = null
     setProfile(null)
