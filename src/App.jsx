@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense, createContext, useContext, Component } from 'react'
-import { HashRouter as BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { useFcmToken } from './hooks/useFcmToken'
