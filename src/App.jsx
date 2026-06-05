@@ -241,7 +241,7 @@ export default function App() {
   return (
     <ThemeContext.Provider value={{ theme, setTheme, fontSize, setFontSize }}>
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL}>
         <ChatUnreadProvider>
         <BackButtonHandler />
         <PushSetup />
