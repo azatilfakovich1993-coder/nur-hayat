@@ -85,6 +85,7 @@ export default function ProfilePage() {
   const [showPrivacy,  setShowPrivacy]  = useState(false)
   const [showTerms,    setShowTerms]    = useState(false)
   const [showContact,  setShowContact]  = useState(false)
+  const [loggingOut,   setLoggingOut]   = useState(false)
 
   // Настройки уведомлений
   const [notifPrayer,  setNotifPrayer]  = useState(() => localStorage.getItem('notif_prayer') !== 'false')
@@ -294,6 +295,8 @@ export default function ProfilePage() {
 
 
   async function handleLogout() {
+    if (loggingOut) return
+    setLoggingOut(true)
     await logout()
     navigate('/auth')
   }
@@ -555,7 +558,9 @@ export default function ProfilePage() {
             ))}
           </div>
         )}
-        <button style={{ ...s.logoutBtn, marginTop: 8 }} onClick={handleLogout}>Выйти из аккаунта</button>
+        <button style={{ ...s.logoutBtn, marginTop: 8, opacity: loggingOut ? 0.6 : 1 }} onClick={handleLogout} disabled={loggingOut}>
+          {loggingOut ? '⏳ Выходим...' : 'Выйти из аккаунта'}
+        </button>
 
         {/* ── 6. О ПРИЛОЖЕНИИ ── */}
         <SectionLabel>О приложении</SectionLabel>
