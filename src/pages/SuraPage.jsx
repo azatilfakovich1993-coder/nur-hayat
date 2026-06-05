@@ -253,11 +253,11 @@ export default function SuraPage() {
             ayats:  sura.ayats,
             date:   new Date().toISOString(),
           }))
-          markedRead.current = false // сбрасываем при каждой новой суре
+          markedRead.current = false
         }
       }
       else { setError(true); setLoading(false) }
-    })
+    }).catch(() => { setError(true); setLoading(false) })
   }, [id, tid])
 
   // Засчитываем суру как прочитанную когда последний аят стал виден
@@ -361,7 +361,7 @@ export default function SuraPage() {
               fetchSura(id, tid).then(data => {
                 if (data) setVerses(data); else setError(true)
                 setLoading(false)
-              })
+              }).catch(() => { setError(true); setLoading(false) })
             }}>Повторить</button>
           </div>
         )}

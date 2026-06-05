@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, lazy, Suspense, createContext, useContext } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense, createContext, useContext, Component } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
@@ -103,6 +103,24 @@ function AppShell({ children }) {
   )
 }
 
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: false } }
+  static getDerivedStateFromError() { return { error: true } }
+  render() {
+    if (this.state.error) return (
+      <div style={{ height:'100%', background:'#070710', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:16, padding:24 }}>
+        <div style={{ fontSize:40 }}>🔄</div>
+        <div style={{ color:'#C9A84C', fontSize:18, fontWeight:600 }}>Что-то пошло не так</div>
+        <div style={{ color:'rgba(255,255,255,0.5)', fontSize:14, textAlign:'center' }}>Нажми кнопку ниже чтобы перезагрузить</div>
+        <button onClick={() => window.location.reload()} style={{ marginTop:8, padding:'12px 32px', background:'#C9A84C', color:'#070710', border:'none', borderRadius:12, fontSize:15, fontWeight:600, cursor:'pointer' }}>
+          Перезагрузить
+        </button>
+      </div>
+    )
+    return this.props.children
+  }
+}
+
 function LoadingScreen() {
   return (
     <div style={{ height:'100%', background:'#070710', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -110,6 +128,52 @@ function LoadingScreen() {
         نور
       </div>
       <style>{`@keyframes pulse { 0%,100%{opacity:.4;transform:scale(.95)} 50%{opacity:1;transform:scale(1.05)} }`}</style>
+    </div>
+  )
+}
+
+function BismillahSplash({ onDone }) {
+  const [visible, setVisible] = useState(false)
+  const [gone,    setGone]    = useState(false)
+
+  useEffect(() => {
+    // fade-in: дать браузеру один кадр чтобы DOM появился, потом включить opacity
+    const t0 = setTimeout(() => setVisible(true), 50)
+    // fade-out
+    const t1 = setTimeout(() => setVisible(false), 2200)
+    // убрать из DOM после завершения анимации
+    const t2 = setTimeout(() => { setGone(true); onDone?.() }, 2950)
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(t2) }
+  }, [])
+
+  if (gone) return null
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 9999,
+      background: '#070710',
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 16,
+      opacity: visible ? 1 : 0,
+      transition: 'opacity 0.7s ease',
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        fontFamily: "'Scheherazade New', serif",
+        fontSize: 34,
+        color: '#C9A84C',
+        textAlign: 'center',
+        lineHeight: 1.6,
+        direction: 'rtl',
+      }}>
+        بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ
+      </div>
+      <div style={{ fontSize: 13, color: 'rgba(201,168,76,0.65)', letterSpacing: 0.5, textAlign: 'center' }}>
+        Bismi Allāhi ar-Raḥmāni ar-Raḥīm
+      </div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
+        Во имя Аллаха, Милостивого, Милосердного
+      </div>
     </div>
   )
 }
@@ -162,6 +226,7 @@ function BackButtonHandler() {
 export default function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'dark')
   const [fontSize, setFontSize] = useState(() => Number(localStorage.getItem('arabic_font_size')) || 24)
+  const [showBismillah] = useState(() => !sessionStorage.getItem('bismillah_shown'))
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -181,6 +246,8 @@ export default function App() {
         <BackButtonHandler />
         <PushSetup />
         <MilestoneListener />
+        {showBismillah && <BismillahSplash onDone={() => sessionStorage.setItem('bismillah_shown', '1')} />}
+        <ErrorBoundary>
         <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/"           element={<SplashPage />} />
@@ -201,6 +268,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </Suspense>
+        </ErrorBoundary>
         </ChatUnreadProvider>
       </BrowserRouter>
     </AuthProvider>

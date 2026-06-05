@@ -1175,11 +1175,22 @@ export default function PrayerPage() {
       // Показываем награду
       setRewardName(prayerName)
       setRewardIdx(rewardCounter.current++)
-      // Обновляем стрик если все 5
       const newDone = donePrayers.size + 1
       if (newDone >= 5) setStreak(s => s + 1)
-      // +10 за намаз, +30 бонус если все 5 — суммируем в одном вызове чтобы не было гонки
-      addNur(newDone === 5 ? 40 : 10, user, profile, setProfile)
+
+      // НУР начисляется максимум 1 раз за каждый намаз в день
+      const nurKey = `prayer_nur_${today}_${prayerId}_${user.id}`
+      if (!localStorage.getItem(nurKey)) {
+        localStorage.setItem(nurKey, '1')
+        // +10 за намаз, +30 бонус если все 5 — суммируем в одном вызове
+        const allFiveKey = `prayer_nur_${today}_all5_${user.id}`
+        if (newDone === 5 && !localStorage.getItem(allFiveKey)) {
+          localStorage.setItem(allFiveKey, '1')
+          addNur(40, user, profile, setProfile) // 10 + 30 бонус
+        } else if (newDone < 5) {
+          addNur(10, user, profile, setProfile)
+        }
+      }
     }
 
     // Сохраняем в Supabase

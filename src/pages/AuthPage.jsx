@@ -17,17 +17,30 @@ export default function AuthPage() {
   const [error,   setError]   = useState('')
   const [loading, setLoading] = useState(false)
 
+  /* ── Таймаут для запросов ── */
+  function withTimeout(promise, ms = 15000) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
+    ])
+  }
+
   /* ── Вход ── */
   async function handleLogin() {
     setError('')
     if (!email || !pass) { setError('Заполните все поля'); return }
     setLoading(true)
-    const { error: e } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(), password: pass
-    })
-    setLoading(false)
-    if (e) { setError(friendlyError(e.message)); return }
-    navigate('/home')
+    try {
+      const { error: e } = await withTimeout(
+        supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pass })
+      )
+      if (e) { setError(friendlyError(e.message)); return }
+      navigate('/home')
+    } catch {
+      setError('Нет соединения. Проверьте интернет и попробуйте снова.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   /* ── Регистрация — шаги ── */
@@ -41,31 +54,40 @@ export default function AuthPage() {
     const full = { ...regData, ...data }
     setError(''); setLoading(true)
 
-    // 1. Создаём аккаунт
-    const { data: authData, error: signUpErr } = await supabase.auth.signUp({
-      email:    full.email,
-      password: full.password,
-      options:  { data: { name: full.name } }
-    })
-    if (signUpErr) { setError(friendlyError(signUpErr.message)); setLoading(false); return }
+    try {
+      // 1. Создаём аккаунт
+      const { data: authData, error: signUpErr } = await withTimeout(
+        supabase.auth.signUp({
+          email:    full.email,
+          password: full.password,
+          options:  { data: { name: full.name } }
+        })
+      )
+      if (signUpErr) { setError(friendlyError(signUpErr.message)); return }
 
-    // 2. Сохраняем профиль
-    const { error: profileErr } = await supabase.from('profiles').insert({
-      id:             authData.user.id,
-      name:           full.name,
-      email:          full.email,
-      language:       full.language       || 'ru',
-      translation_id: full.translationId  || 131,
-      level:          full.level          || 'seeker',
-      gender:         full.gender         || null,
-      nur:            10,
-      streak:         1,
-      onboarded:      false
-    })
-    if (profileErr) { setError('Ошибка сохранения профиля'); setLoading(false); return }
+      // 2. Сохраняем профиль
+      const { error: profileErr } = await withTimeout(
+        supabase.from('profiles').insert({
+          id:             authData.user.id,
+          name:           full.name,
+          email:          full.email,
+          language:       full.language       || 'ru',
+          translation_id: full.translationId  || 131,
+          level:          full.level          || 'seeker',
+          gender:         full.gender         || null,
+          nur:            10,
+          streak:         1,
+          onboarded:      false
+        })
+      )
+      if (profileErr) { setError('Ошибка сохранения профиля'); return }
 
-    setLoading(false)
-    navigate('/onboarding')
+      navigate('/onboarding')
+    } catch {
+      setError('Нет соединения. Проверьте интернет и попробуйте снова.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   const switchTab = t => { setTab(t); setError(''); setRegStep(1); setRegData({}) }

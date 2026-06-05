@@ -31,6 +31,7 @@ export default defineConfig({
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,svg,woff2}'],
         globIgnores: ['**/audio/**', '**/prayer/**'],
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB — для бандла с Кораном
       }
     })
   ]
