@@ -49,7 +49,7 @@ export function AuthProvider({ children }) {
     // Таймаут 6 сек — Supabase может не отвечать в России
     Promise.race([
       supabase.auth.getSession(),
-      new Promise(r => setTimeout(() => r({ data: { session: null } }), 6000))
+      new Promise(r => setTimeout(() => r({ data: { session: null } }), 4000))
     ]).then(({ data: { session } }) => {
       const u = session?.user ?? null
       setUser(u)
@@ -92,7 +92,7 @@ export function AuthProvider({ children }) {
     try {
       const { data } = await Promise.race([
         supabase.from('profiles').select('*').eq('id', userId).single(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
       ])
       setProfile(data)
       if (data?.progress) restoreProgress(data.progress)

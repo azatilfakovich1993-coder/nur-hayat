@@ -25,6 +25,12 @@ export default function SplashPage() {
     navigate(user ? '/home' : '/auth', { replace: true })
   }, [splashDone, loading, user, navigate])
 
+  // Запасной таймаут — если loading не снялся за 5с, уходим на /auth
+  useEffect(() => {
+    const t = setTimeout(() => navigate('/auth', { replace: true }), 5000)
+    return () => clearTimeout(t)
+  }, [navigate])
+
   return (
     <div style={styles.page}>
       {/* Background orbs */}
