@@ -29,7 +29,10 @@ export default function OnboardingPage() {
 
   async function finish() {
     if (user) {
-      await supabase.from('profiles').update({ onboarded: true }).eq('id', user.id)
+      await Promise.race([
+        supabase.from('profiles').update({ onboarded: true }).eq('id', user.id),
+        new Promise(r => setTimeout(r, 5000))
+      ])
       setProfile(p => ({ ...p, onboarded: true }))
     }
     navigate('/home')

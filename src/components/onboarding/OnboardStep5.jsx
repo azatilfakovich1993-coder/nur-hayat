@@ -14,13 +14,14 @@ export default function OnboardStep5({ onNext }) {
 
   useEffect(() => {
     let i = 0
+    let mounted = true
     const interval = setInterval(() => {
-      if (i >= NUR_ACTIONS.length) { clearInterval(interval); return }
+      if (!mounted || i >= NUR_ACTIONS.length) { clearInterval(interval); return }
       setAnimIdx(i)
       setNurVal(v => v + parseInt(NUR_ACTIONS[i].pts))
       i++
     }, 700)
-    return () => clearInterval(interval)
+    return () => { mounted = false; clearInterval(interval) }
   }, [])
 
   return (
