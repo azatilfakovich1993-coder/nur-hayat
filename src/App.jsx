@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, lazy, Suspense, createContext, useContext, Component } from 'react'
-import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { useFcmToken } from './hooks/useFcmToken'
@@ -241,7 +241,7 @@ export default function App() {
   return (
     <ThemeContext.Provider value={{ theme, setTheme, fontSize, setFontSize }}>
     <AuthProvider>
-      <BrowserRouter>
+      <HashRouter>
         <ChatUnreadProvider>
         <BackButtonHandler />
         <PushSetup />
@@ -270,7 +270,7 @@ export default function App() {
         </Suspense>
         </ErrorBoundary>
         </ChatUnreadProvider>
-      </BrowserRouter>
+      </HashRouter>
     </AuthProvider>
     </ThemeContext.Provider>
   )
