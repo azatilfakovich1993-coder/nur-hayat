@@ -46,7 +46,11 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     // Сначала проверяем существующую сессию (критично для PWA)
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Таймаут 6 сек — Supabase может не отвечать в России
+    Promise.race([
+      supabase.auth.getSession(),
+      new Promise(r => setTimeout(() => r({ data: { session: null } }), 6000))
+    ]).then(({ data: { session } }) => {
       const u = session?.user ?? null
       setUser(u)
       userRef.current = u
@@ -86,16 +90,14 @@ export function AuthProvider({ children }) {
 
   async function loadProfile(userId) {
     try {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      const { data } = await Promise.race([
+        supabase.from('profiles').select('*').eq('id', userId).single(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 6000))
+      ])
       setProfile(data)
-      // Восстанавливаем прогресс из Supabase в localStorage
       if (data?.progress) restoreProgress(data.progress)
     } catch {
-      // ignore
+      // ignore — профиль загрузится позже или при следующем входе
     } finally {
       setLoading(false)
     }
@@ -122,7 +124,13 @@ export function AuthProvider({ children }) {
         new Promise(r => setTimeout(r, 3000))
       ])
     }
-    try { await supabase.auth.signOut() } catch {}
+    // signOut тоже с таймаутом — не ждём дольше 3 секунд
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise(r => setTimeout(r, 3000))
+      ])
+    } catch {}
     setUser(null)
     userRef.current = null
     setProfile(null)
