@@ -76,7 +76,7 @@ export default function RegisterStep3({ onNext, onBack, loading }) {
             cursor: selected ? 'pointer' : 'default'
           }}
         >
-          {loading ? 'Создаём...' : 'Создать аккаунт ✨'}
+          {loading ? '⏳ Подождите ~10 сек...' : 'Создать аккаунт ✨'}
         </button>
       </div>
     </div>

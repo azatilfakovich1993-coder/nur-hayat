@@ -18,7 +18,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
 
   /* ── Таймаут для запросов ── */
-  function withTimeout(promise, ms = 15000) {
+  function withTimeout(promise, ms = 10000) {
     return Promise.race([
       promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
@@ -64,6 +64,7 @@ export default function AuthPage() {
         })
       )
       if (signUpErr) { setError(friendlyError(signUpErr.message)); return }
+      if (!authData?.user) { setError('Проверьте почту — мы отправили письмо для подтверждения'); return }
 
       // 2. Сохраняем профиль
       const { error: profileErr } = await withTimeout(
