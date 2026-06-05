@@ -1,4 +1,3 @@
-import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { Preferences } from '@capacitor/preferences'
 import App from './App'
@@ -15,9 +14,7 @@ async function restoreAndRender() {
   } catch {}
 
   ReactDOM.createRoot(document.getElementById('root')).render(
-    <React.StrictMode>
-      <App />
-    </React.StrictMode>
+    <App />
   )
 }
 
