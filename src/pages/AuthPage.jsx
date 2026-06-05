@@ -113,6 +113,13 @@ export default function AuthPage() {
           <div style={{ ...s.tabIndicator, left: tab === 'login' ? 4 : '50%' }} />
         </div>
 
+        {/* Ошибка — заметный баннер вверху карточки */}
+        {error && (
+          <div style={s.errorBanner} onClick={() => setError('')}>
+            ⚠️ {error}
+          </div>
+        )}
+
         <div style={s.body} className="scroll-y">
           {tab === 'login' ? (
             <div style={s.form}>
@@ -129,10 +136,9 @@ export default function AuthPage() {
                     onChange={e => setPass(e.target.value)} placeholder="••••••••"
                     onKeyDown={e => e.key === 'Enter' && handleLogin()} />
                 </div>
-                {error && <div className="error-msg">{error}</div>}
               </div>
               <button className="btn btn-primary" onClick={handleLogin} disabled={loading}>
-                {loading ? 'Входим...' : 'Войти'}
+                {loading ? '⏳ Входим...' : 'Войти'}
               </button>
             </div>
           ) : (
@@ -145,7 +151,6 @@ export default function AuthPage() {
               {regStep === 1 && <RegisterStep1 data={regData} onNext={step1Next} />}
               {regStep === 3 && <RegisterStep3Gender data={regData} onNext={step3Next} onBack={() => setRegStep(1)} />}
               {regStep === 4 && <RegisterStep3 onNext={step4Next} onBack={() => setRegStep(3)} loading={loading} />}
-              {error && <div className="error-msg">{error}</div>}
             </div>
           )}
         </div>
@@ -212,5 +217,10 @@ const s = {
   },
   body:      { flex:1, padding:20, overflowY:'auto' },
   form:      { display:'flex', flexDirection:'column', gap:16, minHeight:'100%' },
-  formInner: { display:'flex', flexDirection:'column', gap:14, flex:1 }
+  formInner: { display:'flex', flexDirection:'column', gap:14, flex:1 },
+  errorBanner: {
+    background:'rgba(220,53,69,.15)', borderBottom:'1px solid rgba(220,53,69,.3)',
+    color:'#ff6b6b', fontSize:13, padding:'12px 16px',
+    cursor:'pointer', flexShrink:0, lineHeight:1.4,
+  }
 }
