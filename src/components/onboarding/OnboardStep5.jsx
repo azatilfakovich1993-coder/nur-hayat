@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react'
-
 const NUR_ACTIONS = [
   { icon: '📖', text: 'Прочитал суру',          pts: '+10' },
   { icon: '🕌', text: 'Совершил намаз',          pts: '+5'  },
@@ -8,29 +6,9 @@ const NUR_ACTIONS = [
   { icon: '📅', text: 'Зашёл в приложение',      pts: '+3'  },
 ]
 
+const TOTAL_NUR = 10 + NUR_ACTIONS.reduce((sum, a) => sum + parseInt(a.pts), 0)
+
 export default function OnboardStep5({ onNext }) {
-  const [animIdx, setAnimIdx] = useState(-1)
-  const [nurVal,  setNurVal]  = useState(10)
-
-  useEffect(() => {
-    let i = 0
-    let mounted = true
-    let advanceTimer = null
-    const interval = setInterval(() => {
-      if (!mounted) return
-      if (i >= NUR_ACTIONS.length) {
-        clearInterval(interval)
-        // Даём пользователю мгновение полюбоваться итогом, затем идём дальше сами
-        advanceTimer = setTimeout(() => { if (mounted) onNext() }, 900)
-        return
-      }
-      setAnimIdx(i)
-      setNurVal(v => v + parseInt(NUR_ACTIONS[i].pts))
-      i++
-    }, 700)
-    return () => { mounted = false; clearInterval(interval); clearTimeout(advanceTimer) }
-  }, [onNext])
-
   return (
     <div style={s.wrap}>
       <div style={s.header}>
@@ -42,7 +20,7 @@ export default function OnboardStep5({ onNext }) {
       <div style={s.nurCard}>
         <div style={s.nurCircle}>
           <div style={s.nurIcon}>◉</div>
-          <div style={s.nurCount}>{nurVal}</div>
+          <div style={s.nurCount}>{TOTAL_NUR}</div>
           <div style={s.nurLabel}>НУР</div>
         </div>
         <div style={s.nurGlow} />
@@ -51,18 +29,10 @@ export default function OnboardStep5({ onNext }) {
       {/* Список действий */}
       <div style={s.actionList}>
         {NUR_ACTIONS.map((a, i) => (
-          <div key={i} style={{
-            ...s.actionRow,
-            opacity: animIdx >= i ? 1 : 0.25,
-            transform: animIdx >= i ? 'translateX(0)' : 'translateX(-8px)',
-            transition: 'all .4s ease',
-          }}>
+          <div key={i} style={s.actionRow}>
             <span style={s.actionIcon}>{a.icon}</span>
             <span style={s.actionText}>{a.text}</span>
-            <span style={{
-              ...s.actionPts,
-              color: animIdx >= i ? '#52b788' : 'var(--text-muted)',
-            }}>{a.pts}</span>
+            <span style={{ ...s.actionPts, color: '#52b788' }}>{a.pts}</span>
           </div>
         ))}
       </div>
