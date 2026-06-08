@@ -26,22 +26,22 @@ const d = {
   prefix: "workbox",
   runtime: "runtime",
   suffix: typeof registration < "u" ? registration.scope : ""
-}, T = (n) => [d.prefix, n, d.suffix].filter((e) => e && e.length > 0).join("-"), X = (n) => {
+}, D = (n) => [d.prefix, n, d.suffix].filter((e) => e && e.length > 0).join("-"), X = (n) => {
   for (const e of Object.keys(d))
     n(e);
-}, b = {
+}, C = {
   updateDetails: (n) => {
     X((e) => {
       typeof n[e] == "string" && (d[e] = n[e]);
     });
   },
-  getGoogleAnalyticsName: (n) => n || T(d.googleAnalytics),
-  getPrecacheName: (n) => n || T(d.precache),
+  getGoogleAnalyticsName: (n) => n || D(d.googleAnalytics),
+  getPrecacheName: (n) => n || D(d.precache),
   getPrefix: () => d.prefix,
-  getRuntimeName: (n) => n || T(d.runtime),
+  getRuntimeName: (n) => n || D(d.runtime),
   getSuffix: () => d.suffix
 };
-function K(n, e) {
+function O(n, e) {
   const t = e();
   return n.waitUntil(t), t;
 }
@@ -97,19 +97,19 @@ class te {
     }, this._precacheController = e;
   }
 }
-let w;
+let y;
 function se() {
-  if (w === void 0) {
+  if (y === void 0) {
     const n = new Response("");
     if ("body" in n)
       try {
-        new Response(n.body), w = !0;
+        new Response(n.body), y = !0;
       } catch {
-        w = !1;
+        y = !1;
       }
-    w = !1;
+    y = !1;
   }
-  return w;
+  return y;
 }
 async function ne(n, e) {
   let t = null;
@@ -123,19 +123,19 @@ async function ne(n, e) {
   return new Response(i, r);
 }
 const ae = (n) => new URL(String(n), location.href).href.replace(new RegExp(`^${location.origin}`), "");
-function O(n, e) {
+function B(n, e) {
   const t = new URL(n);
   for (const s of e)
     t.searchParams.delete(s);
   return t.href;
 }
 async function re(n, e, t, s) {
-  const a = O(e.url, t);
+  const a = B(e.url, t);
   if (e.url === a)
     return n.match(e, s);
   const r = Object.assign(Object.assign({}, s), { ignoreSearch: !0 }), i = await n.keys(e, r);
   for (const c of i) {
-    const o = O(c.url, t);
+    const o = B(c.url, t);
     if (a === o)
       return n.match(c, s);
   }
@@ -150,9 +150,9 @@ class ie {
     });
   }
 }
-const q = /* @__PURE__ */ new Set();
+const H = /* @__PURE__ */ new Set();
 async function ce() {
-  for (const n of q)
+  for (const n of H)
     await n();
 }
 function oe(n) {
@@ -306,7 +306,7 @@ class he {
     const r = await this._ensureResponseSafeToCache(t);
     if (!r)
       return !1;
-    const { cacheName: i, matchOptions: c } = this._strategy, o = await self.caches.open(i), h = this.hasCallback("cacheDidUpdate"), m = h ? await re(
+    const { cacheName: i, matchOptions: c } = this._strategy, o = await self.caches.open(i), h = this.hasCallback("cacheDidUpdate"), w = h ? await re(
       // TODO(philipwalton): the `__WB_REVISION__` param is a precaching
       // feature. Consider into ways to only add this behavior if using
       // precaching.
@@ -324,7 +324,7 @@ class he {
     for (const u of this.iterateCallbacks("cacheDidUpdate"))
       await u({
         cacheName: i,
-        oldResponse: m,
+        oldResponse: w,
         newResponse: r.clone(),
         request: a,
         event: this.event
@@ -473,7 +473,7 @@ class he {
     return s || t && t.status !== 200 && (t = void 0), t;
   }
 }
-class I {
+class M {
   /**
    * Creates a new instance of the strategy and sets all documented option
    * properties as public instance properties.
@@ -497,7 +497,7 @@ class I {
    * for any `cache.match()` or `cache.put()` calls made by this strategy.
    */
   constructor(e = {}) {
-    this.cacheName = b.getRuntimeName(e.cacheName), this.plugins = e.plugins || [], this.fetchOptions = e.fetchOptions, this.matchOptions = e.matchOptions;
+    this.cacheName = C.getRuntimeName(e.cacheName), this.plugins = e.plugins || [], this.fetchOptions = e.fetchOptions, this.matchOptions = e.matchOptions;
   }
   /**
    * Perform a request strategy and returns a `Promise` that will resolve with
@@ -595,7 +595,7 @@ class I {
       throw i;
   }
 }
-class p extends I {
+class p extends M {
   /**
    *
    * @param {Object} [options]
@@ -614,7 +614,7 @@ class p extends I {
    * get the response from the network if there's a precache miss.
    */
   constructor(e = {}) {
-    e.cacheName = b.getPrecacheName(e.cacheName), super(e), this._fallbackToNetwork = e.fallbackToNetwork !== !1, this.plugins.push(p.copyRedirectedCacheableResponsesPlugin);
+    e.cacheName = C.getPrecacheName(e.cacheName), super(e), this._fallbackToNetwork = e.fallbackToNetwork !== !1, this.plugins.push(p.copyRedirectedCacheableResponsesPlugin);
   }
   /**
    * @private
@@ -709,7 +709,7 @@ class le {
    */
   constructor({ cacheName: e, plugins: t = [], fallbackToNetwork: s = !0 } = {}) {
     this._urlsToCacheKeys = /* @__PURE__ */ new Map(), this._urlsToCacheModes = /* @__PURE__ */ new Map(), this._cacheKeysToIntegrities = /* @__PURE__ */ new Map(), this._strategy = new p({
-      cacheName: b.getPrecacheName(e),
+      cacheName: C.getPrecacheName(e),
       plugins: [
         ...t,
         new te({ precacheController: this })
@@ -779,7 +779,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
    * @return {Promise<workbox-precaching.InstallResult>}
    */
   install(e) {
-    return K(e, async () => {
+    return O(e, async () => {
       const t = new ee();
       this.strategy.plugins.push(t);
       for (const [r, i] of this._urlsToCacheKeys) {
@@ -809,7 +809,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
    * @return {Promise<workbox-precaching.CleanupResult>}
    */
   activate(e) {
-    return K(e, async () => {
+    return O(e, async () => {
       const t = await self.caches.open(this.strategy.cacheName), s = await t.keys(), a = new Set(this._urlsToCacheKeys.values()), r = [];
       for (const i of s)
         a.has(i.url) || (await t.delete(i), r.push(i.url));
@@ -893,13 +893,13 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
     return (s) => (s.request = new Request(e), s.params = Object.assign({ cacheKey: t }, s.params), this.strategy.handle(s));
   }
 }
-let D;
-const M = () => (D || (D = new le()), D);
+let L;
+const v = () => (L || (L = new le()), L);
 try {
   self["workbox:routing:7.3.0"] && _();
 } catch {
 }
-const H = "GET", E = (n) => n && typeof n == "object" ? n : { handle: n };
+const V = "GET", E = (n) => n && typeof n == "object" ? n : { handle: n };
 class g {
   /**
    * Constructor for Route class.
@@ -912,7 +912,7 @@ class g {
    * @param {string} [method='GET'] The HTTP method to match the Route
    * against.
    */
-  constructor(e, t, s = H) {
+  constructor(e, t, s = V) {
     this.handler = E(t), this.match = e, this.method = s;
   }
   /**
@@ -1038,13 +1038,13 @@ class de {
     } catch (u) {
       h = Promise.reject(u);
     }
-    const m = i && i.catchHandler;
-    return h instanceof Promise && (this._catchHandler || m) && (h = h.catch(async (u) => {
-      if (m)
+    const w = i && i.catchHandler;
+    return h instanceof Promise && (this._catchHandler || w) && (h = h.catch(async (u) => {
+      if (w)
         try {
-          return await m.handle({ url: s, request: e, event: t, params: r });
-        } catch (A) {
-          A instanceof Error && (u = A);
+          return await w.handle({ url: s, request: e, event: t, params: r });
+        } catch (K) {
+          K instanceof Error && (u = K);
         }
       if (this._catchHandler)
         return this._catchHandler.handle({ url: s, request: e, event: t });
@@ -1091,7 +1091,7 @@ class de {
    * @param {string} [method='GET'] The HTTP method to associate with this
    * default handler. Each method has its own default.
    */
-  setDefaultHandler(e, t = H) {
+  setDefaultHandler(e, t = V) {
     this._defaultHandlerMap.set(t, E(e));
   }
   /**
@@ -1129,9 +1129,9 @@ class de {
       throw new l("unregister-route-route-not-registered");
   }
 }
-let y;
-const fe = () => (y || (y = new de(), y.addFetchListener(), y.addCacheListener()), y);
-function C(n, e, t) {
+let R;
+const fe = () => (R || (R = new de(), R.addFetchListener(), R.addCacheListener()), R);
+function m(n, e, t) {
   let s;
   if (typeof n == "string") {
     const r = new URL(n, location.href), i = ({ url: c }) => c.href === r.href;
@@ -1205,8 +1205,8 @@ class me extends g {
   }
 }
 function we(n) {
-  const e = M(), t = new me(e, n);
-  C(t);
+  const e = v(), t = new me(e, n);
+  m(t);
 }
 const ye = "-precache-", _e = async (n, e = ye) => {
   const s = (await self.caches.keys()).filter((a) => a.includes(e) && a.includes(self.registration.scope) && a !== n);
@@ -1214,24 +1214,24 @@ const ye = "-precache-", _e = async (n, e = ye) => {
 };
 function Re() {
   self.addEventListener("activate", (n) => {
-    const e = b.getPrecacheName();
+    const e = C.getPrecacheName();
     n.waitUntil(_e(e).then((t) => {
     }));
   });
 }
 function be(n) {
-  return M().createHandlerBoundToURL(n);
+  return v().createHandlerBoundToURL(n);
 }
 function Ce(n) {
-  M().precache(n);
+  v().precache(n);
 }
 function xe(n, e) {
   Ce(n), we(e);
 }
 function Ee(n) {
-  q.add(n);
+  H.add(n);
 }
-function V(n) {
+function G(n) {
   n.then(() => {
   });
 }
@@ -1286,7 +1286,7 @@ class De extends g {
     return !!this._allowlist.some((a) => a.test(s));
   }
 }
-class $ extends I {
+class S extends M {
   /**
    * @private
    * @param {Request|string} request A request to run this strategy for.
@@ -1320,7 +1320,7 @@ const Le = {
    */
   cacheWillUpdate: async ({ response: n }) => n.status === 200 || n.status === 0 ? n : null
 };
-class Ue extends I {
+class Ue extends M {
   /**
    * @param {Object} [options]
    * @param {string} [options.cacheName] Cache name to store and retrieve
@@ -1415,9 +1415,9 @@ class Ue extends I {
   }
 }
 const ke = (n, e) => e.some((t) => n instanceof t);
-let B, W;
+let W, j;
 function Pe() {
-  return B || (B = [
+  return W || (W = [
     IDBDatabase,
     IDBObjectStore,
     IDBIndex,
@@ -1426,13 +1426,13 @@ function Pe() {
   ]);
 }
 function Ne() {
-  return W || (W = [
+  return j || (j = [
     IDBCursor.prototype.advance,
     IDBCursor.prototype.continue,
     IDBCursor.prototype.continuePrimaryKey
   ]);
 }
-const G = /* @__PURE__ */ new WeakMap(), P = /* @__PURE__ */ new WeakMap(), z = /* @__PURE__ */ new WeakMap(), L = /* @__PURE__ */ new WeakMap(), v = /* @__PURE__ */ new WeakMap();
+const $ = /* @__PURE__ */ new WeakMap(), N = /* @__PURE__ */ new WeakMap(), z = /* @__PURE__ */ new WeakMap(), U = /* @__PURE__ */ new WeakMap(), A = /* @__PURE__ */ new WeakMap();
 function Ie(n) {
   const e = new Promise((t, s) => {
     const a = () => {
@@ -1445,12 +1445,12 @@ function Ie(n) {
     n.addEventListener("success", r), n.addEventListener("error", i);
   });
   return e.then((t) => {
-    t instanceof IDBCursor && G.set(t, n);
+    t instanceof IDBCursor && $.set(t, n);
   }).catch(() => {
-  }), v.set(e, n), e;
+  }), A.set(e, n), e;
 }
 function Me(n) {
-  if (P.has(n))
+  if (N.has(n))
     return;
   const e = new Promise((t, s) => {
     const a = () => {
@@ -1462,13 +1462,13 @@ function Me(n) {
     };
     n.addEventListener("complete", r), n.addEventListener("error", i), n.addEventListener("abort", i);
   });
-  P.set(n, e);
+  N.set(n, e);
 }
-let N = {
+let I = {
   get(n, e, t) {
     if (n instanceof IDBTransaction) {
       if (e === "done")
-        return P.get(n);
+        return N.get(n);
       if (e === "objectStoreNames")
         return n.objectStoreNames || z.get(n);
       if (e === "store")
@@ -1484,30 +1484,30 @@ let N = {
   }
 };
 function ve(n) {
-  N = n(N);
+  I = n(I);
 }
 function Se(n) {
   return n === IDBDatabase.prototype.transaction && !("objectStoreNames" in IDBTransaction.prototype) ? function(e, ...t) {
-    const s = n.call(U(this), e, ...t);
+    const s = n.call(k(this), e, ...t);
     return z.set(s, e.sort ? e.sort() : [e]), f(s);
   } : Ne().includes(n) ? function(...e) {
-    return n.apply(U(this), e), f(G.get(this));
+    return n.apply(k(this), e), f($.get(this));
   } : function(...e) {
-    return f(n.apply(U(this), e));
+    return f(n.apply(k(this), e));
   };
 }
 function Ae(n) {
-  return typeof n == "function" ? Se(n) : (n instanceof IDBTransaction && Me(n), ke(n, Pe()) ? new Proxy(n, N) : n);
+  return typeof n == "function" ? Se(n) : (n instanceof IDBTransaction && Me(n), ke(n, Pe()) ? new Proxy(n, I) : n);
 }
 function f(n) {
   if (n instanceof IDBRequest)
     return Ie(n);
-  if (L.has(n))
-    return L.get(n);
+  if (U.has(n))
+    return U.get(n);
   const e = Ae(n);
-  return e !== n && (L.set(n, e), v.set(e, n)), e;
+  return e !== n && (U.set(n, e), A.set(e, n)), e;
 }
-const U = (n) => v.get(n);
+const k = (n) => A.get(n);
 function Ke(n, e, { blocked: t, upgrade: s, blocking: a, terminated: r } = {}) {
   const i = indexedDB.open(n, e), c = f(i);
   return s && i.addEventListener("upgradeneeded", (o) => {
@@ -1531,12 +1531,12 @@ function Oe(n, { blocked: e } = {}) {
   )), f(t).then(() => {
   });
 }
-const Be = ["get", "getKey", "getAll", "getAllKeys", "count"], We = ["put", "add", "delete", "clear"], k = /* @__PURE__ */ new Map();
-function j(n, e) {
+const Be = ["get", "getKey", "getAll", "getAllKeys", "count"], We = ["put", "add", "delete", "clear"], P = /* @__PURE__ */ new Map();
+function q(n, e) {
   if (!(n instanceof IDBDatabase && !(e in n) && typeof e == "string"))
     return;
-  if (k.get(e))
-    return k.get(e);
+  if (P.get(e))
+    return P.get(e);
   const t = e.replace(/FromIndex$/, ""), s = e !== t, a = We.includes(t);
   if (
     // Bail if the target doesn't exist on the target. Eg, getAll isn't in Edge.
@@ -1551,22 +1551,22 @@ function j(n, e) {
       a && o.done
     ]))[0];
   };
-  return k.set(e, r), r;
+  return P.set(e, r), r;
 }
 ve((n) => ({
   ...n,
-  get: (e, t, s) => j(e, t) || n.get(e, t, s),
-  has: (e, t) => !!j(e, t) || n.has(e, t)
+  get: (e, t, s) => q(e, t) || n.get(e, t, s),
+  has: (e, t) => !!q(e, t) || n.has(e, t)
 }));
 try {
   self["workbox:expiration:7.3.0"] && _();
 } catch {
 }
-const je = "workbox-expiration", R = "cache-entries", F = (n) => {
+const je = "workbox-expiration", b = "cache-entries", F = (n) => {
   const e = new URL(n, location.href);
   return e.hash = "", e.href;
 };
-class Fe {
+class qe {
   /**
    *
    * @param {string} cacheName
@@ -1584,7 +1584,7 @@ class Fe {
    * @private
    */
   _upgradeDb(e) {
-    const t = e.createObjectStore(R, { keyPath: "id" });
+    const t = e.createObjectStore(b, { keyPath: "id" });
     t.createIndex("cacheName", "cacheName", { unique: !1 }), t.createIndex("timestamp", "timestamp", { unique: !1 });
   }
   /**
@@ -1613,7 +1613,7 @@ class Fe {
       // Edge switches to Chromium and all browsers we support work with
       // array keyPaths.
       id: this._getId(e)
-    }, r = (await this.getDb()).transaction(R, "readwrite", {
+    }, r = (await this.getDb()).transaction(b, "readwrite", {
       durability: "relaxed"
     });
     await r.store.put(s), await r.done;
@@ -1627,7 +1627,7 @@ class Fe {
    * @private
    */
   async getTimestamp(e) {
-    const s = await (await this.getDb()).get(R, this._getId(e));
+    const s = await (await this.getDb()).get(b, this._getId(e));
     return s == null ? void 0 : s.timestamp;
   }
   /**
@@ -1643,7 +1643,7 @@ class Fe {
    */
   async expireEntries(e, t) {
     const s = await this.getDb();
-    let a = await s.transaction(R).store.index("timestamp").openCursor(null, "prev");
+    let a = await s.transaction(b).store.index("timestamp").openCursor(null, "prev");
     const r = [];
     let i = 0;
     for (; a; ) {
@@ -1652,7 +1652,7 @@ class Fe {
     }
     const c = [];
     for (const o of r)
-      await s.delete(R, o.id), c.push(o.url);
+      await s.delete(b, o.id), c.push(o.url);
     return c;
   }
   /**
@@ -1677,7 +1677,7 @@ class Fe {
     })), this._db;
   }
 }
-class qe {
+class Fe {
   /**
    * To construct a new CacheExpiration instance you must provide at least
    * one of the `config` properties.
@@ -1692,7 +1692,7 @@ class qe {
    * that will be used when calling `delete()` on the cache.
    */
   constructor(e, t = {}) {
-    this._isRunning = !1, this._rerunRequested = !1, this._maxEntries = t.maxEntries, this._maxAgeSeconds = t.maxAgeSeconds, this._matchOptions = t.matchOptions, this._cacheName = e, this._timestampModel = new Fe(e);
+    this._isRunning = !1, this._rerunRequested = !1, this._maxEntries = t.maxEntries, this._maxAgeSeconds = t.maxAgeSeconds, this._matchOptions = t.matchOptions, this._cacheName = e, this._timestampModel = new qe(e);
   }
   /**
    * Expires entries for the given cache and given criteria.
@@ -1706,7 +1706,7 @@ class qe {
     const e = this._maxAgeSeconds ? Date.now() - this._maxAgeSeconds * 1e3 : 0, t = await this._timestampModel.expireEntries(e, this._maxEntries), s = await self.caches.open(this._cacheName);
     for (const a of t)
       await s.delete(a, this._matchOptions);
-    this._isRunning = !1, this._rerunRequested && (this._rerunRequested = !1, V(this.expireEntries()));
+    this._isRunning = !1, this._rerunRequested && (this._rerunRequested = !1, G(this.expireEntries()));
   }
   /**
    * Update the timestamp for the given URL. This ensures the when
@@ -1744,7 +1744,7 @@ class qe {
     this._rerunRequested = !1, await this._timestampModel.expireEntries(1 / 0);
   }
 }
-class S {
+class T {
   /**
    * @param {ExpirationPluginOptions} config
    * @param {number} [config.maxEntries] The maximum number of entries to cache.
@@ -1761,7 +1761,7 @@ class S {
       if (!r)
         return null;
       const i = this._isResponseDateFresh(r), c = this._getCacheExpiration(a);
-      V(c.expireEntries());
+      G(c.expireEntries());
       const o = c.updateTimestamp(s.url);
       if (t)
         try {
@@ -1784,10 +1784,10 @@ class S {
    * @private
    */
   _getCacheExpiration(e) {
-    if (e === b.getRuntimeName())
+    if (e === C.getRuntimeName())
       throw new l("expire-custom-caches-only");
     let t = this._cacheExpirations.get(e);
-    return t || (t = new qe(e, this._config), this._cacheExpirations.set(e, t)), t;
+    return t || (t = new Fe(e, this._config), this._cacheExpirations.set(e, t)), t;
   }
   /**
    * @param {Response} cachedResponse
@@ -1843,33 +1843,41 @@ class S {
 }
 self.skipWaiting();
 Te();
-xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"cd7426c36c9164c7f17c5ff8edc6495d","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-DHF-X0kq.js"},{"revision":null,"url":"assets/web-CdoQ_TYB.js"},{"revision":null,"url":"assets/web-Bk54vhvz.js"},{"revision":null,"url":"assets/web-BLXJAeao.js"},{"revision":null,"url":"assets/verses-B0Pt6iQm.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-DhAHe4c3.js"},{"revision":null,"url":"assets/nur-DaTakeEU.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/index-5yAzojz4.js"},{"revision":null,"url":"assets/fetchVerse-DXUtHOBx.js"},{"revision":null,"url":"assets/SuraPage-BE0lp6WJ.js"},{"revision":null,"url":"assets/SplashPage-BLbzOfiu.js"},{"revision":null,"url":"assets/QuranPage-DDqhlz7g.js"},{"revision":null,"url":"assets/ProfilePage-DOh5C37b.js"},{"revision":null,"url":"assets/PrayerPage-3sy3hVVT.js"},{"revision":null,"url":"assets/OnboardingPage-CniXGauS.js"},{"revision":null,"url":"assets/LearnPage-6Pvt0p8u.js"},{"revision":null,"url":"assets/HomePage-CtwKlGJI.js"},{"revision":null,"url":"assets/ChatPage-Da45estv.js"},{"revision":null,"url":"assets/BeginnerPath-DLbT0qt6.js"},{"revision":null,"url":"assets/AuthPage-C2VttlNm.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
+xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"4b111a29a57090a2ba4ca8f02506517a","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-u8CTIZUR.js"},{"revision":null,"url":"assets/web-DGm2_EsR.js"},{"revision":null,"url":"assets/web-DAd_QiUp.js"},{"revision":null,"url":"assets/web-BlAL6KWe.js"},{"revision":null,"url":"assets/verses-B0Pt6iQm.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-BKMK_I8U.js"},{"revision":null,"url":"assets/nur-CZR7BwVW.js"},{"revision":null,"url":"assets/index-DO2w3R03.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/fetchVerse-DXUtHOBx.js"},{"revision":null,"url":"assets/SuraPage-DtP8M_JR.js"},{"revision":null,"url":"assets/SplashPage-Bo77T9bk.js"},{"revision":null,"url":"assets/QuranPage-U47ORp0s.js"},{"revision":null,"url":"assets/ProfilePage-BRX2LlY9.js"},{"revision":null,"url":"assets/PrayerPage-CNYTMHvf.js"},{"revision":null,"url":"assets/OnboardingPage-CaoXvotH.js"},{"revision":null,"url":"assets/LearnPage-C3BeHz6p.js"},{"revision":null,"url":"assets/HomePage-DXl4rVuP.js"},{"revision":null,"url":"assets/ChatPage-DmjVkyAb.js"},{"revision":null,"url":"assets/BeginnerPath-D-HPJXsd.js"},{"revision":null,"url":"assets/AuthPage-B8B8Q-yT.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
 Re();
-C(
+m(
   new De(be("index.html"))
 );
-C(
+m(
   /\/quran-data\/\d+\.json$/i,
-  new $({
+  new S({
     cacheName: "quran-data-cache",
-    plugins: [new S({ maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 365 })]
+    plugins: [new T({ maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 365 })]
   }),
   "GET"
 );
-C(
+m(
+  /^https:\/\/cdn\.islamic\.network\/quran\/audio(-surah)?\/.*/i,
+  new S({
+    cacheName: "quran-audio-cache",
+    plugins: [new T({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 })]
+  }),
+  "GET"
+);
+m(
   /^https:\/\/api\.alquran\.cloud\/.*/i,
-  new $({
+  new S({
     cacheName: "quran-api-cache",
-    plugins: [new S({ maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 })]
+    plugins: [new T({ maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 })]
   }),
   "GET"
 );
-C(
+m(
   /^https:\/\/bwnzfyxcgzscghowpqfn\.supabase\.co\/rest\/.*/i,
   new Ue({
     cacheName: "supabase-api-cache",
     networkTimeoutSeconds: 6,
-    plugins: [new S({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 })]
+    plugins: [new T({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 })]
   }),
   "GET"
 );
