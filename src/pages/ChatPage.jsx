@@ -213,6 +213,18 @@ function formatDuration(sec) {
   return `${m}:${s.toString().padStart(2, '0')}`
 }
 
+// Кэш последних сообщений комнаты — мгновенный показ при открытии,
+// пока свежие данные грузятся в фоне (Supabase отвечает медленно из РФ)
+function getCachedMessages(room) {
+  try {
+    const raw = localStorage.getItem('nur-hayat-chat-' + room)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+function setCachedMessages(room, msgs) {
+  try { localStorage.setItem('nur-hayat-chat-' + room, JSON.stringify(msgs.slice(-40))) } catch {}
+}
+
 export default function ChatPage() {
   const { user, profile, setProfile } = useAuth()
   const location = useLocation()
@@ -235,6 +247,8 @@ export default function ChatPage() {
   const [userAvatars, setUserAvatars] = useState({}) // user_id -> avatar_url // когда другие последний раз читали этот чат
   const [hasMore,     setHasMore]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [loadError,   setLoadError]   = useState(false)
+  const [reloadKey,   setReloadKey]   = useState(0)
 
   const bottomRef        = useRef()
   const inputRef         = useRef()
@@ -253,16 +267,30 @@ export default function ChatPage() {
   // Загрузка сообщений + Realtime
   useEffect(() => {
     if (!user) return
-    setLoading(true)
+    setLoadError(false)
     setMessages([])
 
-    supabase.from('messages').select('*')
-      .eq('room', room)
-      .order('created_at', { ascending: false })
-      .limit(40)
+    // Кэш — показываем мгновенно, пока свежие данные грузятся в фоне
+    const cached = getCachedMessages(room)
+    if (cached?.length) {
+      setMessages(cached)
+      setHasMore(cached.length >= 40)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
+    Promise.race([
+      supabase.from('messages').select('*')
+        .eq('room', room)
+        .order('created_at', { ascending: false })
+        .limit(40),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000)),
+    ])
       .then(({ data }) => {
         const msgs = [...(data || [])].reverse()
         setMessages(msgs)
+        setCachedMessages(room, msgs)
         setHasMore((data?.length || 0) >= 40)
         setLoading(false)
         // Загружаем аватары всех участников
@@ -276,6 +304,10 @@ export default function ChatPage() {
               setUserAvatars(map)
             })
         }
+      })
+      .catch(() => {
+        setLoading(false)
+        if (!cached?.length) setLoadError(true)
       })
 
     // Записываем что я сейчас читаю этот чат
@@ -356,7 +388,7 @@ export default function ChatPage() {
       supabase.removeChannel(channel)
       supabase.removeChannel(presenceChannel)
     }
-  }, [room, user?.id])
+  }, [room, user?.id, reloadKey])
 
   // Скролл вниз при новых сообщениях / восстановление позиции при подгрузке старых
   useEffect(() => {
@@ -657,7 +689,17 @@ export default function ChatPage() {
 
       {/* ── Сообщения ── */}
       <div ref={messagesRef} style={s.messages} className="scroll-y" onScroll={handleMessagesScroll}>
-        {genderBlocked ? (
+        {loadError ? (
+          <div style={s.empty}>
+            <div style={s.emptyIcon}>📡</div>
+            <div style={s.emptyTitle}>Сервер отвечает медленно</div>
+            <div style={s.emptySub}>Не удалось загрузить чат. Проверьте интернет и попробуйте ещё раз</div>
+            <button className="btn btn-primary" style={{ marginTop: 14 }}
+              onClick={() => setReloadKey(k => k + 1)}>
+              Повторить
+            </button>
+          </div>
+        ) : genderBlocked ? (
           <div style={s.empty}>
             <div style={s.emptyIcon}>{currentRoom.icon}</div>
             <div style={s.emptyTitle}>

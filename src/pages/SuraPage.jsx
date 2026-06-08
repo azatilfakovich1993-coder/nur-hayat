@@ -54,20 +54,30 @@ function getTranslit(text, language) {
 }
 
 const RECITERS = [
-  { id: 'Alafasy_128kbps',          name: 'Мишари Алафаси' },
-  { id: 'Abdullah_Basfar_192kbps',  name: 'Абдулла Басфар' },
-  { id: 'Husary_128kbps',           name: 'Махмуд Хусари'  },
-  { id: 'Minshawy_Murattal_128kbps',name: 'Мухаммад Минщауи' },
+  { id: 'ar.alafasy',         bitrate: 128, name: 'Мишари Алафаси' },
+  { id: 'ar.abdullahbasfar',  bitrate: 192, name: 'Абдулла Басфар' },
+  { id: 'ar.husary',          bitrate: 128, name: 'Махмуд Хусари'  },
+  { id: 'ar.minshawi',        bitrate: 128, name: 'Мухаммад Минщауи' },
 ]
 
-function pad(n, len) { return String(n).padStart(len, '0') }
+// Сумма аятов всех сур до текущей — для перевода (сура, аят) в номер аята
+// в общей нумерации Корана (1..6236), как требует CDN islamic.network
+const SURA_OFFSETS = (() => {
+  const offsets = []
+  let total = 0
+  for (const s of SURAS) { offsets[s.id] = total; total += s.ayats }
+  return offsets
+})()
 
-const AUDIO_PROXY = 'https://bwnzfyxcgzscghowpqfn.supabase.co/functions/v1/audio-proxy?url='
+function globalAyahNumber(suraId, ayatNum) {
+  return (SURA_OFFSETS[suraId] || 0) + ayatNum
+}
 
-// Аудио одного аята через прокси (обход блокировок браузеров)
-function ayatAudioUrl(reciterId, suraId, ayatNum) {
-  const url = `https://everyayah.com/data/${reciterId}/${pad(suraId, 3)}${pad(ayatNum, 3)}.mp3`
-  return `${AUDIO_PROXY}${encodeURIComponent(url)}`
+// Аудио одного аята с CDN islamic.network (Cloudflare, отдаёт CORS-заголовки,
+// доступен напрямую — в отличие от everyayah.com, который блокируется без VPN)
+function ayatAudioUrl(reciter, suraId, ayatNum) {
+  const num = globalAyahNumber(suraId, ayatNum)
+  return `https://cdn.islamic.network/quran/audio/${reciter.bitrate}/${reciter.id}/${num}.mp3`
 }
 
 function fmtTime(sec) {
@@ -112,7 +122,7 @@ function AudioPlayer({ suraId, verses, onVerseChange }) {
     const a = audioRef.current
     if (!a) return
 
-    a.src = ayatAudioUrl(reciter.id, suraId, verse.number)
+    a.src = ayatAudioUrl(reciter, suraId, verse.number)
     setLoading(true)
     setErrMsg('')
     setAyatIdx(safeIdx)

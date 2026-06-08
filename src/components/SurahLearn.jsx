@@ -1,25 +1,35 @@
 import { useState, useRef, useEffect } from 'react'
 import { SURAHS } from '../data/surahs-learn'
+import { SURAS } from '../data/suras'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 
-const PROXY    = 'https://bwnzfyxcgzscghowpqfn.supabase.co/functions/v1/audio-proxy?url='
-const EVERYAYAH = 'https://everyayah.com/data/Alafasy_128kbps'
+// Аудио — напрямую с CDN islamic.network (без прокси: один переход быстрее
+// и надёжнее, чем браузер → Supabase Edge Function (США) → everyayah.com)
+const CDN_VERSE = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy'
 const CDN_SURAH = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
 
-function pad(n, len) { return String(n).padStart(len, '0') }
-function proxy(url) { return `${PROXY}${encodeURIComponent(url)}` }
+// Сумма аятов всех сур до текущей — переводит (сура, аят) в общую нумерацию 1..6236
+const SURA_OFFSETS = (() => {
+  const offsets = []
+  let total = 0
+  for (const s of SURAS) { offsets[s.id] = total; total += s.ayats }
+  return offsets
+})()
+function globalAyahNumber(suraId, ayatNum) {
+  return (SURA_OFFSETS[suraId] || 0) + ayatNum
+}
 
 function getVerseAudio(surah, verseN) {
-  if (surah.id === 'ayat-kursi') return proxy(`${EVERYAYAH}/002255.mp3`)
-  if (surah.surahNum) return proxy(`${EVERYAYAH}/${pad(surah.surahNum, 3)}${pad(verseN, 3)}.mp3`)
+  if (surah.id === 'ayat-kursi') return `${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`
+  if (surah.surahNum) return `${CDN_VERSE}/${globalAyahNumber(surah.surahNum, verseN)}.mp3`
   if (surah.audioUrl) return surah.audioUrl   // локальный файл для не-Коранических текстов
   return null
 }
 
 function getSurahAudio(surah) {
-  if (surah.id === 'ayat-kursi') return proxy(`${EVERYAYAH}/002255.mp3`)
-  if (surah.surahNum) return proxy(`${CDN_SURAH}/${surah.surahNum}.mp3`)
+  if (surah.id === 'ayat-kursi') return `${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`
+  if (surah.surahNum) return `${CDN_SURAH}/${surah.surahNum}.mp3`
   if (surah.audioUrl) return surah.audioUrl   // локальный файл
   return null
 }

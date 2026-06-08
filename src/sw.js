@@ -26,6 +26,17 @@ registerRoute(
   'GET'
 )
 
+// Аудио чтения Корана (cdn.islamic.network) — кэшируем навсегда: один раз
+// прослушанный аят больше не качаем заново
+registerRoute(
+  /^https:\/\/cdn\.islamic\.network\/quran\/audio(-surah)?\/.*/i,
+  new CacheFirst({
+    cacheName: 'quran-audio-cache',
+    plugins: [new ExpirationPlugin({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 })]
+  }),
+  'GET'
+)
+
 registerRoute(
   /^https:\/\/api\.alquran\.cloud\/.*/i,
   new CacheFirst({

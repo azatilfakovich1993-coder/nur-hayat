@@ -1,8 +1,6 @@
-const PROXY = 'https://bwnzfyxcgzscghowpqfn.supabase.co/functions/v1/audio-proxy?url='
+// Аудио — напрямую с CDN islamic.network (без прокси через Supabase Edge Function)
 const CDN = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
-const EVA = 'https://everyayah.com/data/Alafasy_128kbps'
-const sa  = n      => `${PROXY}${encodeURIComponent(`${CDN}/${n}.mp3`)}`
-const va  = (s, a) => `${PROXY}${encodeURIComponent(`${EVA}/${String(s).padStart(3,'0')}${String(a).padStart(3,'0')}.mp3`)}`
+const sa  = n => `${CDN}/${n}.mp3`
 // Local letter audio (letter_2 = Alif ... letter_29 = Ya)
 const la  = n      => `/audio/letters/letter_${n}.mp3`
 
