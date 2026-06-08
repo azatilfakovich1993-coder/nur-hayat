@@ -31,7 +31,9 @@ export async function fetchVerse(key) {
   const v = data[key]
   return {
     arabic:          v?.a || '',
-    transliteration: v?.t || TRANSLITERATIONS[key] || '',
+    // Сначала — наша русская транскрипция (вручную составлена для аятов дня),
+    // иначе — латинская транскрипция из общей базы (английский стиль tanzil.net)
+    transliteration: TRANSLITERATIONS[key] || v?.t || '',
     translation:     v?.k || '',
     ref:             key,
     fromCache:       false,
