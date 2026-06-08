@@ -2,8 +2,15 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
+// GitHub Pages раздаёт сайт из подпути /nur-hayat/, а Firebase Hosting — с корня /.
+// BASE_PATH/OUT_DIR переопределяются только при сборке для Firebase (см. деплой),
+// обычная сборка (npm run build, GitHub Actions) использует значения по умолчанию.
+const BASE = process.env.BASE_PATH || '/nur-hayat/'
+const OUT_DIR = process.env.OUT_DIR || 'dist'
+
 export default defineConfig({
-  base: '/nur-hayat/',
+  base: BASE,
+  build: { outDir: OUT_DIR },
   plugins: [
     react(),
     VitePWA({
@@ -22,8 +29,8 @@ export default defineConfig({
         background_color: '#070710',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/nur-hayat/',
-        start_url: '/nur-hayat/',
+        scope: BASE,
+        start_url: BASE,
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
