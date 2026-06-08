@@ -1,16 +1,38 @@
-import kulievData from '../data/quran-kuliev.json'
-import arabicData from '../data/quran-arabic.json'
-import translitData from '../data/quran-translit.json'
 import { TRANSLITERATIONS } from '../data/verses'
 
+// Данные Корана лежат в public/quran-data/<сура>.json — по одному файлу на суру
+// (вместо одного бандла на 2.3 МБ). Так открытие суры скачивает только её часть —
+// критично для пользователей на медленном мобильном интернете.
+const chapterCache = new Map() // id -> Promise<{ "1:1": { a, k, t }, ... }>
+
+function loadChapter(chapterId) {
+  const id = Number(chapterId)
+  if (!chapterCache.has(id)) {
+    chapterCache.set(
+      id,
+      fetch(`${import.meta.env.BASE_URL}quran-data/${id}.json`).then(r => r.json())
+    )
+  }
+  return chapterCache.get(id)
+}
+
 // Длина Бисмиллы берётся из аята 1:1 (tanzil.net, точное совпадение диакритики)
-const BISMILLAH_LEN = arabicData['1:1'].length
+let bismillahLenPromise = null
+function getBismillahLen() {
+  if (!bismillahLenPromise) {
+    bismillahLenPromise = loadChapter(1).then(data => (data['1:1']?.a || '').length)
+  }
+  return bismillahLenPromise
+}
 
 export async function fetchVerse(key) {
+  const [chapterId] = key.split(':')
+  const data = await loadChapter(chapterId)
+  const v = data[key]
   return {
-    arabic:          arabicData[key] || '',
-    transliteration: translitData[key] || TRANSLITERATIONS[key] || '',
-    translation:     kulievData[key] || '',
+    arabic:          v?.a || '',
+    transliteration: v?.t || TRANSLITERATIONS[key] || '',
+    translation:     v?.k || '',
     ref:             key,
     fromCache:       false,
   }
@@ -18,23 +40,25 @@ export async function fetchVerse(key) {
 
 export async function fetchSura(chapterId) {
   const id = Number(chapterId)
+  const [data, bismillahLen] = await Promise.all([loadChapter(chapterId), getBismillahLen()])
   const ayahs = []
   let i = 1
   while (true) {
     const key = `${chapterId}:${i}`
-    if (!arabicData[key]) break
+    const v = data[key]
+    if (!v) break
 
-    let arabic = arabicData[key]
+    let arabic = v.a || ''
     // Убираем Бисмиллу из первого аята всех сур кроме 1 (Фатиха) и 9 (Тауба)
     if (i === 1 && id !== 1 && id !== 9) {
-      arabic = arabic.slice(BISMILLAH_LEN).trimStart()
+      arabic = arabic.slice(bismillahLen).trimStart()
     }
 
     ayahs.push({
       number:          i,
       arabic,
-      transliteration: translitData[key] || TRANSLITERATIONS[key] || '',
-      translation:     kulievData[key] || '',
+      transliteration: v.t || TRANSLITERATIONS[key] || '',
+      translation:     v.k || '',
     })
     i++
   }

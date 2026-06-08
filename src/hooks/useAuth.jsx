@@ -38,6 +38,18 @@ function collectProgress() {
   return progress
 }
 
+// Кэш профиля — показываем мгновенно при запуске, обновляем в фоне
+// (на медленном/мобильном интернете не заставляем ждать сеть)
+function getCachedProfile(userId) {
+  try {
+    const raw = localStorage.getItem('nur-hayat-profile-' + userId)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+function setCachedProfile(userId, profile) {
+  try { localStorage.setItem('nur-hayat-profile-' + userId, JSON.stringify(profile)) } catch {}
+}
+
 export function AuthProvider({ children }) {
   const [user,    setUser]    = useState(null)
   const [profile, setProfile] = useState(null)
@@ -89,15 +101,45 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function loadProfile(userId) {
+    // Сначала показываем кэш — мгновенно, без ожидания сети
+    const cached = getCachedProfile(userId)
+    if (cached) {
+      setProfile(cached)
+      if (cached.progress) restoreProgress(cached.progress)
+      setLoading(false)
+    }
     try {
-      const { data } = await Promise.race([
+      const { data, error } = await Promise.race([
         supabase.from('profiles').select('*').eq('id', userId).single(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 4000))
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
       ])
-      setProfile(data)
-      if (data?.progress) restoreProgress(data.progress)
+      if (data) {
+        setProfile(data)
+        setCachedProfile(userId, data)
+        if (data.progress) restoreProgress(data.progress)
+      } else if (error?.code === 'PGRST116') {
+        // Строки профиля нет — регистрация прервалась после signUp,
+        // но до записи профиля (Supabase не успел ответить вовремя).
+        // Создаём профиль сейчас, чтобы аккаунт не остался "битым".
+        const u = userRef.current
+        const { data: created } = await supabase.from('profiles').insert({
+          id:             userId,
+          name:           u?.user_metadata?.name || '',
+          email:          u?.email || '',
+          language:       'ru',
+          translation_id: 131,
+          level:          'seeker',
+          nur:            10,
+          streak:         1,
+          onboarded:      false,
+        }).select().single()
+        if (created) {
+          setProfile(created)
+          setCachedProfile(userId, created)
+        }
+      }
     } catch {
-      // ignore — профиль загрузится позже или при следующем входе
+      // сеть не ответила — остаёмся на кэше (если он был)
     } finally {
       setLoading(false)
     }
@@ -113,7 +155,10 @@ export function AuthProvider({ children }) {
   const refreshProfile = async () => {
     if (!userRef.current) return
     const { data } = await supabase.from('profiles').select('*').eq('id', userRef.current.id).single()
-    setProfile(data)
+    if (data) {
+      setProfile(data)
+      setCachedProfile(userRef.current.id, data)
+    }
   }
 
   const logout = async () => {

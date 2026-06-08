@@ -2,7 +2,7 @@
 import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching'
 import { clientsClaim } from 'workbox-core'
 import { registerRoute, NavigationRoute } from 'workbox-routing'
-import { CacheFirst } from 'workbox-strategies'
+import { CacheFirst, NetworkFirst } from 'workbox-strategies'
 import { ExpirationPlugin } from 'workbox-expiration'
 
 self.skipWaiting()
@@ -15,11 +15,35 @@ registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'))
 )
 
+// Данные сур (public/quran-data/<id>.json) — неизменяемые, кэшируем навсегда:
+// после первого открытия суры она грузится мгновенно даже офлайн
+registerRoute(
+  /\/quran-data\/\d+\.json$/i,
+  new CacheFirst({
+    cacheName: 'quran-data-cache',
+    plugins: [new ExpirationPlugin({ maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 365 })]
+  }),
+  'GET'
+)
+
 registerRoute(
   /^https:\/\/api\.alquran\.cloud\/.*/i,
   new CacheFirst({
     cacheName: 'quran-api-cache',
     plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 7 })]
+  }),
+  'GET'
+)
+
+// Supabase REST (профиль, намазы, сообщения и т.д.) — на медленном/мобильном
+// интернете ждём сеть максимум 6 сек, иначе сразу отдаём кэш и обновляем его
+// в фоне, как только сеть ответит. Так экраны открываются мгновенно.
+registerRoute(
+  /^https:\/\/bwnzfyxcgzscghowpqfn\.supabase\.co\/rest\/.*/i,
+  new NetworkFirst({
+    cacheName: 'supabase-api-cache',
+    networkTimeoutSeconds: 6,
+    plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 })]
   }),
   'GET'
 )

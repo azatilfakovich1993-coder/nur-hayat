@@ -18,7 +18,7 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false)
 
   /* ── Таймаут для запросов ── */
-  function withTimeout(promise, ms = 10000) {
+  function withTimeout(promise, ms = 30000) {
     return Promise.race([
       promise,
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
@@ -37,7 +37,7 @@ export default function AuthPage() {
       if (e) { setError(friendlyError(e.message)); return }
       navigate('/home')
     } catch {
-      setError('Нет соединения. Проверьте интернет и попробуйте снова.')
+      setError('Сервер отвечает медленно. Попробуйте ещё раз — обычно со 2-й попытки получается.')
     } finally {
       setLoading(false)
     }
@@ -85,7 +85,7 @@ export default function AuthPage() {
 
       navigate('/onboarding')
     } catch {
-      setError('Нет соединения. Проверьте интернет и попробуйте снова.')
+      setError('Сервер отвечает медленно. Нажмите "Создать аккаунт" ещё раз — если email уже занят, значит аккаунт создан, и можно войти.')
     } finally {
       setLoading(false)
     }
