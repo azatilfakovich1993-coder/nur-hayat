@@ -15,14 +15,21 @@ export default function OnboardStep5({ onNext }) {
   useEffect(() => {
     let i = 0
     let mounted = true
+    let advanceTimer = null
     const interval = setInterval(() => {
-      if (!mounted || i >= NUR_ACTIONS.length) { clearInterval(interval); return }
+      if (!mounted) return
+      if (i >= NUR_ACTIONS.length) {
+        clearInterval(interval)
+        // Даём пользователю мгновение полюбоваться итогом, затем идём дальше сами
+        advanceTimer = setTimeout(() => { if (mounted) onNext() }, 900)
+        return
+      }
       setAnimIdx(i)
       setNurVal(v => v + parseInt(NUR_ACTIONS[i].pts))
       i++
     }, 700)
-    return () => { mounted = false; clearInterval(interval) }
-  }, [])
+    return () => { mounted = false; clearInterval(interval); clearTimeout(advanceTimer) }
+  }, [onNext])
 
   return (
     <div style={s.wrap}>
