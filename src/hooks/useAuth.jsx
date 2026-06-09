@@ -118,24 +118,33 @@ export function AuthProvider({ children }) {
         setCachedProfile(userId, data)
         if (data.progress) restoreProgress(data.progress)
       } else if (error?.code === 'PGRST116') {
-        // Строки профиля нет — регистрация прервалась после signUp,
-        // но до записи профиля (Supabase не успел ответить вовремя).
-        // Создаём профиль сейчас, чтобы аккаунт не остался "битым".
-        const u = userRef.current
-        const { data: created } = await supabase.from('profiles').insert({
-          id:             userId,
-          name:           u?.user_metadata?.name || '',
-          email:          u?.email || '',
-          language:       'ru',
-          translation_id: 131,
-          level:          'seeker',
-          nur:            10,
-          streak:         1,
-          onboarded:      false,
-        }).select().single()
-        if (created) {
-          setProfile(created)
-          setCachedProfile(userId, created)
+        // Профиля нет — либо регистрация прервалась, либо гонка с INSERT из AuthPage.
+        // Даём INSERT секунду завершиться и повторяем SELECT.
+        await new Promise(r => setTimeout(r, 1200))
+        const { data: retried } = await supabase
+          .from('profiles').select('*').eq('id', userId).single()
+        if (retried) {
+          setProfile(retried)
+          setCachedProfile(userId, retried)
+          if (retried.progress) restoreProgress(retried.progress)
+        } else {
+          // Всё равно нет — создаём фолбэк (аккаунт "битый", регистрация прервалась)
+          const u = userRef.current
+          const { data: created } = await supabase.from('profiles').insert({
+            id:             userId,
+            name:           u?.user_metadata?.name || '',
+            email:          u?.email || '',
+            language:       'ru',
+            translation_id: 131,
+            level:          'seeker',
+            nur:            10,
+            streak:         1,
+            onboarded:      false,
+          }).select().single()
+          if (created) {
+            setProfile(created)
+            setCachedProfile(userId, created)
+          }
         }
       }
     } catch {

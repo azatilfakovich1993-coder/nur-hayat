@@ -66,8 +66,8 @@ export default function AuthPage() {
       if (signUpErr) { setError(friendlyError(signUpErr.message)); return }
       if (!authData?.user) { setError('Проверьте почту — мы отправили письмо для подтверждения'); return }
 
-      // 2. Сохраняем профиль
-      const { error: profileErr } = await withTimeout(
+      // 2. Сохраняем профиль и сразу помещаем в контекст, не дожидаясь loadProfile
+      const { data: newProfile, error: profileErr } = await withTimeout(
         supabase.from('profiles').insert({
           id:             authData.user.id,
           name:           full.name,
@@ -79,9 +79,10 @@ export default function AuthPage() {
           nur:            10,
           streak:         1,
           onboarded:      false
-        })
+        }).select().single()
       )
       if (profileErr) { setError('Ошибка сохранения профиля'); return }
+      setProfile(newProfile)
 
       navigate('/onboarding')
     } catch {
