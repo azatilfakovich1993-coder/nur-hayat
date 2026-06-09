@@ -74,7 +74,8 @@ export default function HomePage() {
     catch { return {} }
   })
   const prevStreak = useRef(null)
-  const hadith = HADITHS[new Date().getDate() % HADITHS.length]
+  const dayCount = Math.floor(Date.now() / 86400000)
+  const hadith = HADITHS[dayCount % HADITHS.length]
 
   const name = profile?.name || user?.displayName || 'друг'
   const nur   = profile?.nur   || 10
@@ -93,8 +94,7 @@ export default function HomePage() {
   }, [streak])
 
   useEffect(() => {
-    const dayIdx = new Date().getDay()
-    const theme  = APP_VERSES.daily[dayIdx % APP_VERSES.daily.length]
+    const theme = APP_VERSES.daily[dayCount % APP_VERSES.daily.length]
     setDayTheme(theme)
     fetchVerse(theme.key, tid).then(v => {
       if (!v) return
