@@ -1134,6 +1134,16 @@ export default function PrayerPage() {
     const ago30 = new Date(); ago30.setDate(ago30.getDate() - 30)
     const ago30str = ago30.toISOString().split('T')[0]
 
+    // Восстанавливаем отметки за сегодня, сделанные до перемонтирования
+    // компонента (переход на другой экран и обратно сбрасывает todayOverrideRef)
+    if (!todayOverrideRef.current) {
+      try {
+        const localToday = JSON.parse(localStorage.getItem(`today-prayers-${user.id}-${today}`) || 'null')
+        if (Array.isArray(localToday)) todayOverrideRef.current = new Set(localToday)
+      } catch {}
+    }
+    if (todayOverrideRef.current) setDonePrayers(new Set(todayOverrideRef.current))
+
     // Кеш — показываем мгновенно
     const cacheKey = `prayer-logs-${user.id}-${today}`
     try {

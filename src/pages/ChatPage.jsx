@@ -256,6 +256,8 @@ export default function ChatPage() {
   const [reloadKey,   setReloadKey]   = useState(0)
   const [retryAttempt, setRetryAttempt] = useState(0)
   const autoRetryRef = useRef(null)
+  const msgsCountRef = useRef(0)
+  useEffect(() => { msgsCountRef.current = messages.length }, [messages])
 
   const bottomRef        = useRef()
   const inputRef         = useRef()
@@ -298,6 +300,14 @@ export default function ChatPage() {
       if (error) throw error
 
       const msgs = [...(data || [])].reverse()
+
+      // Пустой ответ при уже непустом чате — вероятно сбой прокси/сети,
+      // а не реальное удаление всех сообщений. Не затираем экран.
+      if (msgs.length === 0 && msgsCountRef.current > 0) {
+        setLoading(false)
+        return
+      }
+
       setMessages(msgs)
       if (msgs.length > 0) setCachedMessages(room, msgs)
       setHasMore((data?.length || 0) >= 40)
