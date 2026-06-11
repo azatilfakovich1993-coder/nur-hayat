@@ -334,14 +334,28 @@ export default function ChatPage() {
       if (!cached?.length) setLoadError(true)
     })
 
-    // Polling — основной способ обновления на медленной сети без VPN
-    const poll = setInterval(() => { pullMessages().catch(() => {}) }, 15000)
+    // Онлайн-счётчик: своя отметка "я тут" + подсчёт тех, кто отметился недавно
+    async function updatePresence() {
+      const now = new Date().toISOString()
+      await supabase.from('chat_reads').upsert(
+        { user_id: user.id, room, last_read_at: now },
+        { onConflict: 'user_id,room' },
+      )
+      const cutoff = new Date(Date.now() - 20000).toISOString()
+      const { data } = await supabase.from('chat_reads')
+        .select('user_id')
+        .eq('room', room)
+        .gte('last_read_at', cutoff)
+      if (cancelled) return
+      if (data) setOnline(Math.max(1, new Set(data.map(r => r.user_id)).size))
+    }
+    updatePresence().catch(() => {})
 
-    const now = new Date().toISOString()
-    void supabase.from('chat_reads').upsert(
-      { user_id: user.id, room, last_read_at: now },
-      { onConflict: 'user_id,room' },
-    )
+    // Polling — основной способ обновления на медленной сети без VPN
+    const poll = setInterval(() => {
+      pullMessages().catch(() => {})
+      updatePresence().catch(() => {})
+    }, 5000)
 
     void supabase.from('chat_reads')
       .select('last_read_at')
