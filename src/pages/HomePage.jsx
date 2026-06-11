@@ -41,7 +41,7 @@ function getGreeting() {
 }
 
 export default function HomePage() {
-  const { user, profile, setProfile } = useAuth()
+  const { user, profile, setProfile, saveProgress } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
   const [verse,       setVerse]       = useState(null)
@@ -66,7 +66,8 @@ export default function HomePage() {
   const [hadithLiked,     setHadithLiked]     = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('liked_hadiths') || '[]')
-      return saved.some(h => h.ar === HADITHS[new Date().getDate() % HADITHS.length].ar)
+      const dc = Math.floor(Date.now() / 86400000)
+      return saved.some(h => h.ar === HADITHS[dc % HADITHS.length].ar)
     } catch { return false }
   })
   const [surahProgress, setSurahProgress] = useState(() => {
@@ -77,9 +78,38 @@ export default function HomePage() {
   const dayCount = Math.floor(Date.now() / 86400000)
   const hadith = HADITHS[dayCount % HADITHS.length]
 
-  const name = profile?.name || user?.displayName || 'друг'
-  const nur   = profile?.nur   || 10
+  const name = profile?.name || user?.user_metadata?.name || user?.displayName || 'друг'
   const tid   = profile?.translationId || 131
+
+  // Локальный счётчик НУР — обновляется мгновенно через событие nur-optimistic,
+  // синхронизируется с profile.nur когда все начисления завершились
+  const [nurDisplay, setNurDisplay] = useState(() => profile?.nur || 10)
+  const pendingNurRef = useRef(0)
+  useEffect(() => {
+    if (profile?.nur != null && pendingNurRef.current === 0) setNurDisplay(profile.nur)
+  }, [profile?.nur])
+  useEffect(() => {
+    // Прибавляем дельту к текущему отображаемому значению (а не к profile.nur,
+    // который может быть устаревшим если несколько начислений идут подряд —
+    // иначе второе начисление "затирает" первое и счётчик прыгает назад)
+    const onOptimistic = e => {
+      pendingNurRef.current++
+      setNurDisplay(prev => Math.max(0, prev + e.detail.delta))
+    }
+    // Пока есть незавершённые начисления — игнорируем синхронизацию с profile.nur
+    // (она может прийти со старым значением раньше, чем сработают остальные начисления)
+    const onSettled = e => {
+      pendingNurRef.current = Math.max(0, pendingNurRef.current - 1)
+      if (pendingNurRef.current === 0) setNurDisplay(e.detail.nur)
+    }
+    window.addEventListener('nur-optimistic', onOptimistic)
+    window.addEventListener('nur-settled', onSettled)
+    return () => {
+      window.removeEventListener('nur-optimistic', onOptimistic)
+      window.removeEventListener('nur-settled', onSettled)
+    }
+  }, [])
+  const nur = nurDisplay
 
   // Индекс сегодняшнего дня: Пн=0 … Вс=6
   const todayIdx = (new Date().getDay() + 6) % 7
@@ -116,6 +146,13 @@ export default function HomePage() {
     const now = new Date()
     const today = now.toISOString().split('T')[0]
 
+    // Локальная отметка за сегодня (PrayerPage сохраняет её сразу при тапе) —
+    // показываем мгновенно, не дожидаясь ответа от Frankfurt
+    try {
+      const localToday = JSON.parse(localStorage.getItem(`today-prayers-${user.id}-${today}`) || 'null')
+      if (Array.isArray(localToday)) setDonePrayers(new Set(localToday))
+    } catch {}
+
     // Текущая неделя (Пн–Вс) для кружков
     const dow = now.getDay()
     const diffToMon = dow === 0 ? -6 : 1 - dow
@@ -132,22 +169,33 @@ export default function HomePage() {
     since.setDate(now.getDate() - 60)
     const sinceStr = since.toISOString().split('T')[0]
 
-    supabase
-      .from('prayer_logs')
-      .select('prayer, date')
-      .eq('user_id', user.id)
-      .gte('date', sinceStr)
-      .then(({ data }) => {
+    Promise.race([
+      supabase.from('prayer_logs').select('prayer, date')
+        .eq('user_id', user.id)
+        .gte('date', sinceStr),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+    ])
+      .then(({ data, error }) => {
+        if (error) throw error
         if (!data) return
 
         // byDate: дата -> кол-во намазов
         const byDate = {}
         data.forEach(r => { byDate[r.date] = (byDate[r.date] || 0) + 1 })
 
+        // Локальные отметки за сегодня (PrayerPage может ещё не успеть
+        // дойти до БД к моменту этого запроса) — доверяем им, если они есть
+        let todayPrayerIds = data.filter(r => r.date === today).map(r => r.prayer)
+        try {
+          const localToday = JSON.parse(localStorage.getItem(`today-prayers-${user.id}-${today}`) || 'null')
+          if (Array.isArray(localToday)) {
+            todayPrayerIds = localToday
+            byDate[today] = localToday.length
+          }
+        } catch {}
+
         // Намазы сегодня
-        setDonePrayers(new Set(
-          data.filter(r => r.date === today).map(r => r.prayer)
-        ))
+        setDonePrayers(new Set(todayPrayerIds))
 
         // Кружки текущей недели
         setWeekDone(weekDates.map(d => (byDate[d] || 0) >= 5))
@@ -182,6 +230,9 @@ export default function HomePage() {
           supabase.from('profiles').update({ streak: count }).eq('id', user.id)
           setProfile(p => p ? { ...p, streak: count } : p)
         }
+      })
+      .catch(() => {
+        // Сервер не ответил вовремя — оставляем то, что уже показали из localStorage
       })
   }
 
@@ -227,6 +278,9 @@ export default function HomePage() {
       localStorage.setItem('liked_verses_data', JSON.stringify(data))
     } catch {}
 
+    // Сохраняем прогресс немедленно — не ждём 2-минутный таймер
+    if (user) saveProgress(user.id)
+
     if (newLiked) {
       setNurAnim(true)
       const sp = Array.from({ length: 16 }, (_, i) => ({
@@ -261,6 +315,9 @@ export default function HomePage() {
       }
       localStorage.setItem('liked_hadiths', JSON.stringify(saved))
     } catch {}
+
+    // Сохраняем прогресс немедленно
+    if (user) saveProgress(user.id)
   }
 
   function getMotivMessage() {

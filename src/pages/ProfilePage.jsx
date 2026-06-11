@@ -86,6 +86,21 @@ export default function ProfilePage() {
   const [showTerms,    setShowTerms]    = useState(false)
   const [showContact,  setShowContact]  = useState(false)
   const [loggingOut,   setLoggingOut]   = useState(false)
+  const [showPassChange, setShowPassChange] = useState(false)
+  const [newPass,      setNewPass]      = useState('')
+  const [newPass2,     setNewPass2]     = useState('')
+  const [passStatus,   setPassStatus]   = useState('') // '' | 'saving' | 'ok' | 'error'
+
+  async function handleChangePassword() {
+    if (newPass.length < 6) { setPassStatus('short'); return }
+    if (newPass !== newPass2) { setPassStatus('mismatch'); return }
+    setPassStatus('saving')
+    const { error } = await supabase.auth.updateUser({ password: newPass })
+    if (error) { setPassStatus('error'); return }
+    setPassStatus('ok')
+    setNewPass(''); setNewPass2('')
+    setTimeout(() => { setShowPassChange(false); setPassStatus('') }, 2000)
+  }
 
   // Настройки уведомлений
   const [notifPrayer,  setNotifPrayer]  = useState(() => localStorage.getItem('notif_prayer') !== 'false')
@@ -205,7 +220,7 @@ export default function ProfilePage() {
   }
 
   const [editName,      setEditName]      = useState(false)
-  const [nameVal,       setNameVal]       = useState(profile?.name || '')
+  const [nameVal,       setNameVal]       = useState(profile?.name || user?.user_metadata?.name || '')
   const [showLevel,     setShowLevel]     = useState(false)
   const [showGender,    setShowGender]    = useState(false)
   const [showFavorites, setShowFavorites] = useState(false)
@@ -247,7 +262,7 @@ export default function ProfilePage() {
     localStorage.setItem('liked_hadiths', JSON.stringify(newList))
   }
 
-  const name     = profile?.name || user?.displayName || 'Друг'
+  const name     = profile?.name || user?.user_metadata?.name || user?.displayName || 'Друг'
   const nur      = profile?.nur    || 10
   const streak   = profile?.streak || 1
   const level    = LEVELS[profile?.level] || LEVELS.seeker
@@ -558,6 +573,54 @@ export default function ProfilePage() {
             ))}
           </div>
         )}
+        <button style={s.langBtn} onClick={() => { setShowPassChange(true); setPassStatus('') }}>
+          <span style={s.langFlag}>🔑</span>
+          <span style={s.langName}>Сменить пароль</span>
+          <span style={s.langArrow}>›</span>
+        </button>
+
+        {showPassChange && (
+          <div style={s.modalOverlay} onClick={() => setShowPassChange(false)}>
+            <div style={s.modalSheet} onClick={e => e.stopPropagation()}>
+              <div style={s.modalHeader}>
+                <div style={s.modalTitle}>🔑 Смена пароля</div>
+                <button style={s.modalClose} onClick={() => setShowPassChange(false)}>✕</button>
+              </div>
+              <div style={{ padding:'16px 16px 24px' }}>
+                <div style={cf.label}>Новый пароль</div>
+                <input
+                  style={cf.input}
+                  type="password"
+                  placeholder="Минимум 6 символов"
+                  value={newPass}
+                  onChange={e => { setNewPass(e.target.value); setPassStatus('') }}
+                />
+                <div style={cf.label}>Повторите пароль</div>
+                <input
+                  style={cf.input}
+                  type="password"
+                  placeholder="Повторите пароль"
+                  value={newPass2}
+                  onChange={e => { setNewPass2(e.target.value); setPassStatus('') }}
+                />
+
+                {passStatus === 'short'    && <div style={cf.error}>Пароль должен быть не менее 6 символов.</div>}
+                {passStatus === 'mismatch' && <div style={cf.error}>Пароли не совпадают.</div>}
+                {passStatus === 'error'    && <div style={cf.error}>Не удалось сменить пароль. Попробуйте ещё раз.</div>}
+                {passStatus === 'ok'       && <div style={{ ...cf.error, color:'#4ade80' }}>Пароль успешно изменён ✓</div>}
+
+                <button
+                  style={{ ...cf.btn, opacity: passStatus === 'saving' ? .6 : 1 }}
+                  disabled={passStatus === 'saving'}
+                  onClick={handleChangePassword}
+                >
+                  {passStatus === 'saving' ? 'Сохраняем...' : 'Сохранить'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <button style={{ ...s.logoutBtn, marginTop: 8, opacity: loggingOut ? 0.6 : 1 }} onClick={handleLogout} disabled={loggingOut}>
           {loggingOut ? '⏳ Выходим...' : 'Выйти из аккаунта'}
         </button>
@@ -804,19 +867,11 @@ function ContactScreen({ user, profile, onClose }) {
     if (!name.trim() || !email.trim() || !message.trim()) return
     setStatus('sending')
     try {
-      const res = await fetch(
-        'https://bwnzfyxcgzscghowpqfn.supabase.co/functions/v1/send-contact',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3bnpmeXhjZ3pzY2dob3dwcWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMzMxMDAsImV4cCI6MjA4OTkwOTEwMH0.0M-eXXyaqHZnfOLT0T04T3hCWUE_GuZ-HXE069VDodw`,
-          },
-          body: JSON.stringify({ name: name.trim(), email: email.trim(), message: message.trim() }),
-        }
-      )
-      if (res.ok) { setStatus('ok') }
-      else { setStatus('error') }
+      const { error } = await supabase.functions.invoke('send-contact', {
+        body: { name: name.trim(), email: email.trim(), message: message.trim() },
+      })
+      if (error) throw error
+      setStatus('ok')
     } catch { setStatus('error') }
   }
 

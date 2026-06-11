@@ -6,12 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "build:android": "cross-env BASE_PATH=/ vite build",
     "build:firebase": "cross-env BASE_PATH=/ OUT_DIR=dist-firebase vite build",
     "deploy:firebase": "npm run build:firebase && firebase deploy --only hosting",
     "preview": "vite preview",
-    "cap:sync": "npm run build && npx cap sync android",
+    "cap:sync": "npm run build:android && npx cap sync android",
     "cap:open": "npx cap open android",
-    "cap:run": "npm run build && npx cap sync android && npx cap run android"
+    "cap:run": "npm run build:android && npx cap sync android && npx cap run android"
   },
   "dependencies": {
     "@capacitor-firebase/messaging": "^8.2.0",

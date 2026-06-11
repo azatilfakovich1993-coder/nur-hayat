@@ -24,7 +24,7 @@ const LEVELS = [
   }
 ]
 
-export default function RegisterStep3({ onNext, onBack, loading }) {
+export default function RegisterStep3({ onNext, onBack, loading, status }) {
   const [selected, setSelected] = useState('seeker') // выбрано по умолчанию
 
   return (
@@ -76,7 +76,7 @@ export default function RegisterStep3({ onNext, onBack, loading }) {
             cursor: selected ? 'pointer' : 'default'
           }}
         >
-          {loading ? '⏳ Подождите, идёт регистрация...' : 'Создать аккаунт ✨'}
+          {loading ? `⏳ ${status || 'Подождите...'}` : 'Создать аккаунт ✨'}
         </button>
       </div>
     </div>

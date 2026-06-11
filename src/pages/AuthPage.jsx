@@ -2,6 +2,15 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../hooks/useAuth'
+function withTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ])
+}
+function sleep(ms) {
+  return new Promise(r => setTimeout(r, ms))
+}
 import RegisterStep1 from '../components/auth/RegisterStep1'
 import RegisterStep3Gender from '../components/auth/RegisterStep3Gender'
 import RegisterStep3 from '../components/auth/RegisterStep3'
@@ -16,31 +25,42 @@ export default function AuthPage() {
   const [pass,    setPass]    = useState('')
   const [error,   setError]   = useState('')
   const [loading, setLoading] = useState(false)
-
-  /* ── Таймаут для запросов ── */
-  function withTimeout(promise, ms = 30000) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
-    ])
-  }
+  const [status,  setStatus]  = useState('')
 
   /* ── Вход ── */
   async function handleLogin() {
     setError('')
+    setStatus('')
     if (!email || !pass) { setError('Заполните все поля'); return }
     setLoading(true)
-    try {
-      const { error: e } = await withTimeout(
-        supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password: pass })
-      )
-      if (e) { setError(friendlyError(e.message)); return }
-      navigate('/home')
-    } catch {
-      setError('Сервер отвечает медленно. Попробуйте ещё раз — обычно со 2-й попытки получается.')
-    } finally {
-      setLoading(false)
+    const creds = { email: email.trim().toLowerCase(), password: pass }
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        if (attempt > 1) setStatus(`Повтор ${attempt} из 3…`)
+        const { error: e } = await withTimeout(
+          supabase.auth.signInWithPassword(creds),
+          20000,
+        )
+        if (!e) { navigate('/home'); return }
+        const msg = e.message || ''
+        if (/invalid|credentials|email/i.test(msg)) {
+          setError(friendlyError(msg))
+          setLoading(false)
+          setStatus('')
+          return
+        }
+        if (attempt === 3) setError(friendlyError(msg))
+      } catch {
+        if (attempt === 3) {
+          setError('Сервер отвечает медленно. Проверьте интернет и попробуйте ещё раз.')
+        } else {
+          await sleep(1500 * attempt)
+        }
+      }
     }
+    setLoading(false)
+    setStatus('')
   }
 
   /* ── Регистрация — шаги ── */
@@ -52,7 +72,7 @@ export default function AuthPage() {
 
   async function step4Next(data) {
     const full = { ...regData, ...data }
-    setError(''); setLoading(true)
+    setError(''); setLoading(true); setStatus('Создаём аккаунт...')
 
     try {
       // 1. Создаём аккаунт
@@ -63,10 +83,21 @@ export default function AuthPage() {
           options:  { data: { name: full.name } }
         })
       )
-      if (signUpErr) { setError(friendlyError(signUpErr.message)); return }
+      if (signUpErr) {
+        // Если email уже занят — аккаунт был создан раньше (таймаут), переключаем на вход
+        if (signUpErr.message?.includes('already registered') || signUpErr.message?.includes('already been registered')) {
+          setEmail(full.email)
+          setPass(full.password)
+          setTab('login')
+          setError('Аккаунт уже создан — войдите с этим email и паролем.')
+          return
+        }
+        setError(friendlyError(signUpErr.message)); return
+      }
       if (!authData?.user) { setError('Проверьте почту — мы отправили письмо для подтверждения'); return }
 
       // 2. Сохраняем профиль и сразу помещаем в контекст, не дожидаясь loadProfile
+      setStatus('Сохраняем профиль...')
       const { data: newProfile, error: profileErr } = await withTimeout(
         supabase.from('profiles').insert({
           id:             authData.user.id,
@@ -88,7 +119,7 @@ export default function AuthPage() {
     } catch {
       setError('Сервер отвечает медленно. Нажмите "Создать аккаунт" ещё раз — если email уже занят, значит аккаунт создан, и можно войти.')
     } finally {
-      setLoading(false)
+      setLoading(false); setStatus('')
     }
   }
 
@@ -151,7 +182,7 @@ export default function AuthPage() {
               </div>
               {regStep === 1 && <RegisterStep1 data={regData} onNext={step1Next} />}
               {regStep === 3 && <RegisterStep3Gender data={regData} onNext={step3Next} onBack={() => setRegStep(1)} />}
-              {regStep === 4 && <RegisterStep3 onNext={step4Next} onBack={() => setRegStep(3)} loading={loading} />}
+              {regStep === 4 && <RegisterStep3 onNext={step4Next} onBack={() => setRegStep(3)} loading={loading} status={status} />}
             </div>
           )}
         </div>

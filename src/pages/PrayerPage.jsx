@@ -804,6 +804,15 @@ const qb = {
 
 // aladhan.com — таймзона определяется по координатам на сервере автоматически
 async function fetchTimings(lat, lon, method, school, fajrAngle, ishaAngle) {
+  const today = new Date().toISOString().slice(0, 10)
+  const latR = Math.round(lat * 100) / 100
+  const lonR = Math.round(lon * 100) / 100
+  const cacheKey = `pt-${latR}-${lonR}-${method}-${school}-${fajrAngle}-${ishaAngle}-${today}`
+  try {
+    const cached = localStorage.getItem(cacheKey)
+    if (cached) return JSON.parse(cached)
+  } catch {}
+
   const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=99&methodSettings=${fajrAngle},null,${ishaAngle}&school=${school}&midnightMode=0`
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 8000)
@@ -811,6 +820,7 @@ async function fetchTimings(lat, lon, method, school, fajrAngle, ishaAngle) {
     const res = await fetch(url, { signal: controller.signal })
     if (!res.ok) throw new Error('aladhan error')
     const json = await res.json()
+    try { localStorage.setItem(cacheKey, JSON.stringify(json.data)) } catch {}
     return json.data
   } finally {
     clearTimeout(timer)
@@ -1014,6 +1024,9 @@ export default function PrayerPage() {
   const [rewardIdx,   setRewardIdx]   = useState(null) // null = не показывать
   const [rewardName,  setRewardName]  = useState('')
   const rewardCounter = useRef(0) // растёт с каждым отмеченным намазом
+  // Локальный "источник правды" для намазов сегодня — чтобы поздний ответ
+  // loadTracker (запрошенный до отметки намазов) не затирал стрик нулями
+  const todayOverrideRef = useRef(null)
   const [method,    setMethod]    = useState(() => parseInt(localStorage.getItem('prayer_method')  || '15'))
   const [school,    setSchool]    = useState(() => parseInt(localStorage.getItem('prayer_school')  || '0'))
   const [fajrAngle, setFajrAngle] = useState(() => parseInt(localStorage.getItem('prayer_fajr')    || '18'))
@@ -1119,16 +1132,36 @@ export default function PrayerPage() {
   async function loadTracker() {
     const today = new Date().toISOString().split('T')[0]
     const ago30 = new Date(); ago30.setDate(ago30.getDate() - 30)
+    const ago30str = ago30.toISOString().split('T')[0]
+
+    // Кеш — показываем мгновенно
+    const cacheKey = `prayer-logs-${user.id}-${today}`
+    try {
+      const cached = localStorage.getItem(cacheKey)
+      if (cached) {
+        applyTrackerData(JSON.parse(cached), today)
+      }
+    } catch {}
 
     const { data } = await supabase
       .from('prayer_logs')
       .select('date, prayer')
       .eq('user_id', user.id)
-      .gte('date', ago30.toISOString().split('T')[0])
+      .gte('date', ago30str)
     if (!data) return
 
-    // Сегодня
-    setDonePrayers(new Set(data.filter(r => r.date === today).map(r => r.prayer)))
+    // Сохраняем в кеш на сегодня
+    try { localStorage.setItem(cacheKey, JSON.stringify(data)) } catch {}
+
+    applyTrackerData(data, today)
+  }
+
+  function applyTrackerData(data, today) {
+    // Сегодня — если пользователь уже отмечал намазы локально, доверяем
+    // этому состоянию (DB-ответ мог стартовать ДО отметок и прийти позже)
+    const todaySet = todayOverrideRef.current ?? new Set(data.filter(r => r.date === today).map(r => r.prayer))
+    if (!todayOverrideRef.current) setDonePrayers(new Set(todaySet))
+    else setDonePrayers(new Set(todayOverrideRef.current))
 
     // Неделя — от понедельника до воскресенья текущей недели
     const now = new Date()
@@ -1140,7 +1173,8 @@ export default function PrayerPage() {
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday); d.setDate(monday.getDate() + i)
       const ds = d.toISOString().split('T')[0]
-      days.push({ date: ds, count: data.filter(r => r.date === ds).length })
+      const count = ds === today ? todaySet.size : data.filter(r => r.date === ds).length
+      days.push({ date: ds, count })
     }
     setWeekData(days)
 
@@ -1149,7 +1183,7 @@ export default function PrayerPage() {
     for (let i = 0; i < 30; i++) {
       const d = new Date(); d.setDate(d.getDate() - i)
       const ds = d.toISOString().split('T')[0]
-      const cnt = data.filter(r => r.date === ds).length
+      const cnt = ds === today ? todaySet.size : data.filter(r => r.date === ds).length
       if (cnt >= 5) s++
       else if (i > 0) break // сегодня может быть не завершён
     }
@@ -1165,6 +1199,7 @@ export default function PrayerPage() {
     setDonePrayers(prev => {
       const s = new Set(prev)
       already ? s.delete(prayerId) : s.add(prayerId)
+      todayOverrideRef.current = s
       return s
     })
     setWeekData(prev => prev.map(d =>
@@ -1192,6 +1227,15 @@ export default function PrayerPage() {
         }
       }
     }
+
+    // Локальный кеш отметок за сегодня — чтобы HomePage не сбросил стрик
+    // в 0, если её запрос к БД стартует раньше, чем долетит этот апдейт
+    try {
+      localStorage.setItem(
+        `today-prayers-${user.id}-${today}`,
+        JSON.stringify([...(todayOverrideRef.current || [])])
+      )
+    } catch {}
 
     // Сохраняем в Supabase
     if (already) {

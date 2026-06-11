@@ -6,24 +6,40 @@ export default function SplashPage() {
   const navigate = useNavigate()
   const { user, loading } = useAuth()
   const [phase, setPhase] = useState(0)
-  const [splashDone, setSplashDone] = useState(false)
+  const [minTimeDone, setMinTimeDone] = useState(false)
   // phase 0 → black
   // phase 1 → arabic fades in + glows
-  // phase 2 → latin + subtitle appear
+  // phase 2 → latin + subtitle appear (держим, пока идёт проверка сессии)
   // phase 3 → all fade out → navigate
 
   useEffect(() => {
     const t1 = setTimeout(() => setPhase(1), 400)
     const t2 = setTimeout(() => setPhase(2), 1200)
-    const t3 = setTimeout(() => setPhase(3), 2800)
-    const t4 = setTimeout(() => setSplashDone(true), 3600)
-    return () => [t1, t2, t3, t4].forEach(clearTimeout)
+    const t3 = setTimeout(() => setMinTimeDone(true), 2800)
+    return () => [t1, t2, t3].forEach(clearTimeout)
   }, [])
 
+  // Не ждём сеть: useAuth стартует из localStorage мгновенно.
+  // Жёсткий потолок 5с — на всякий случай, если что-то зависло.
   useEffect(() => {
-    if (!splashDone || loading) return
-    navigate(user ? '/home' : '/auth', { replace: true })
-  }, [splashDone, loading, user, navigate])
+    if (!minTimeDone || loading) return
+    setPhase(3)
+    const t = setTimeout(() => navigate(user ? '/home' : '/auth', { replace: true }), 800)
+    return () => clearTimeout(t)
+  }, [minTimeDone, loading, user, navigate])
+
+  useEffect(() => {
+    const force = setTimeout(() => {
+      let hasUser = false
+      try {
+        const raw = localStorage.getItem('nur-hayat-auth')
+        hasUser = !!(raw && JSON.parse(raw)?.user)
+      } catch {}
+      setPhase(3)
+      navigate(hasUser || user ? '/home' : '/auth', { replace: true })
+    }, 5000)
+    return () => clearTimeout(force)
+  }, [user, navigate])
 
   return (
     <div style={styles.page}>

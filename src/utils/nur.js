@@ -29,24 +29,31 @@ function checkMilestone(oldNur, newNur) {
 let nurQueue = Promise.resolve()
 
 export function addNur(amount, user, profile, setProfile) {
-  const result = nurQueue.then(async () => {
-    if (!user || !profile) return null
+  if (!user || !profile) return Promise.resolve(null)
 
-    // Читаем актуальное значение из БД чтобы не затереть предыдущее начисление
+  const oldNur = profile.nur ?? 0
+  // Событие для немедленного обновления счётчика (подписывается только HomePage)
+  window.dispatchEvent(new CustomEvent('nur-optimistic', { detail: { delta: amount } }))
+
+  const result = nurQueue.then(async () => {
+    // Читаем актуальное значение из БД чтобы не затереть параллельные начисления
     const { data } = await supabase
       .from('profiles')
       .select('nur')
       .eq('id', user.id)
       .single()
 
-    const currentNur = data?.nur ?? profile.nur ?? 0
+    const currentNur = data?.nur ?? oldNur
     const newNur = Math.max(0, currentNur + amount)
-
-    // Обновляем локальный стейт
-    setProfile(p => p ? { ...p, nur: newNur } : p)
 
     // Сохраняем в БД
     await supabase.from('profiles').update({ nur: newNur }).eq('id', user.id)
+
+    // Синхронизируем глобальный profile с фактическим значением БД
+    setProfile(p => p ? { ...p, nur: newNur } : p)
+    // Сообщаем UI финальное значение (profile в React-стейте обновится позже,
+    // событие приходит сразу с актуальным числом)
+    window.dispatchEvent(new CustomEvent('nur-settled', { detail: { nur: newNur } }))
 
     // Проверяем milestone
     const milestone = checkMilestone(currentNur, newNur)
@@ -57,7 +64,7 @@ export function addNur(amount, user, profile, setProfile) {
     return { newNur, milestone }
   })
 
-  nurQueue = result.catch(() => {}) // не блокируем очередь при ошибке
+  nurQueue = result.catch(() => {})
   return result
 }
 
