@@ -46,11 +46,10 @@ registerRoute(
   'GET'
 )
 
-// Supabase REST (профиль, намазы, сообщения и т.д.) — на медленном/мобильном
-// интернете ждём сеть максимум 6 сек, иначе сразу отдаём кэш и обновляем его
-// в фоне, как только сеть ответит. Так экраны открываются мгновенно.
+// Supabase REST через прокси (Frankfurt) — на медленном интернете
+// ждём сеть максимум 6 сек, иначе отдаём кэш и обновляем в фоне.
 registerRoute(
-  /^https:\/\/bwnzfyxcgzscghowpqfn\.supabase\.co\/rest\/.*/i,
+  /^https:\/\/nurhayat\.ru\/rest\/.*/i,
   new NetworkFirst({
     cacheName: 'supabase-api-cache',
     networkTimeoutSeconds: 6,

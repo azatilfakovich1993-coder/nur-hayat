@@ -24,8 +24,8 @@ jobs:
 
       - run: npm run build
         env:
-          VITE_SUPABASE_URL: https://bwnzfyxcgzscghowpqfn.supabase.co
-          VITE_SUPABASE_ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3bnpmeXhjZ3pzY2dob3dwcWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMzMxMDAsImV4cCI6MjA4OTkwOTEwMH0.0M-eXXyaqHZnfOLT0T04T3hCWUE_GuZ-HXE069VDodw
+          VITE_SUPABASE_URL: https://nurhayat.ru
+          VITE_SUPABASE_ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFua2d2c3hqeGpmbWpvcG56bWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDM0ODMsImV4cCI6MjA5NjU3OTQ4M30.vurL1_n7ySL1F59hG2gThf4tyDZuhEfhMmRTLU5eGUU
           VITE_VAPID_PUBLIC_KEY: BPRt4mL268TfF6riuFi0J3XQkZxJsEbkDUNaO8whpmq-3pubOc0HYDsbJn96M0ZndGEmBFy0t2cHteXWB9DphcM
           VITE_FIREBASE_API_KEY: AIzaSyCqpNsJglbfcu1F6URlMG6ultvESui5Qk4
           VITE_FIREBASE_AUTH_DOMAIN: nurhayat-78bc5.firebaseapp.com
@@ -46,8 +46,8 @@ jobs:
         env:
           BASE_PATH: /
           OUT_DIR: dist-firebase
-          VITE_SUPABASE_URL: https://bwnzfyxcgzscghowpqfn.supabase.co
-          VITE_SUPABASE_ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3bnpmeXhjZ3pzY2dob3dwcWZuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzMzMxMDAsImV4cCI6MjA4OTkwOTEwMH0.0M-eXXyaqHZnfOLT0T04T3hCWUE_GuZ-HXE069VDodw
+          VITE_SUPABASE_URL: https://nurhayat.ru
+          VITE_SUPABASE_ANON: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFua2d2c3hqeGpmbWpvcG56bWR1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMDM0ODMsImV4cCI6MjA5NjU3OTQ4M30.vurL1_n7ySL1F59hG2gThf4tyDZuhEfhMmRTLU5eGUU
           VITE_VAPID_PUBLIC_KEY: BPRt4mL268TfF6riuFi0J3XQkZxJsEbkDUNaO8whpmq-3pubOc0HYDsbJn96M0ZndGEmBFy0t2cHteXWB9DphcM
           VITE_FIREBASE_API_KEY: AIzaSyCqpNsJglbfcu1F6URlMG6ultvESui5Qk4
           VITE_FIREBASE_AUTH_DOMAIN: nurhayat-78bc5.firebaseapp.com
