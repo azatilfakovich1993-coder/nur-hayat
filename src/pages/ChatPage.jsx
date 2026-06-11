@@ -186,6 +186,10 @@ function MsgStatus({ msg, lastReadAt }) {
     // Отправляется
     return <span style={{ fontSize: 11, opacity: 0.5, marginLeft: 3 }}>⏱</span>
   }
+  if (msg.failed) {
+    // Не доставлено — нажмите для повтора
+    return <span style={{ fontSize: 12, color: '#ff5f5f', marginLeft: 3 }}>⚠</span>
+  }
   const sentAt = new Date(msg.created_at)
   const isRead = lastReadAt && lastReadAt > sentAt
   const color = isRead ? '#4fc3f7' : 'rgba(7,7,16,0.45)'
@@ -248,7 +252,10 @@ export default function ChatPage() {
   const [hasMore,     setHasMore]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadError,   setLoadError]   = useState(false)
+  const [lastErrMsg,  setLastErrMsg]  = useState('')
   const [reloadKey,   setReloadKey]   = useState(0)
+  const [retryAttempt, setRetryAttempt] = useState(0)
+  const autoRetryRef = useRef(null)
 
   const bottomRef        = useRef()
   const inputRef         = useRef()
@@ -264,61 +271,69 @@ export default function ChatPage() {
   const userLevel  = profile?.level      || 'seeker'
   const userAvatar = profile?.avatar_url || null
 
-  // Загрузка сообщений + Realtime
+  // Загрузка сообщений: кэш → REST → polling (Realtime в РФ часто не работает)
   useEffect(() => {
     if (!user) return
+    let cancelled = false
     setLoadError(false)
-    setMessages([])
+    if (autoRetryRef.current) clearTimeout(autoRetryRef.current)
 
-    // Кэш — показываем мгновенно, пока свежие данные грузятся в фоне
     const cached = getCachedMessages(room)
     if (cached?.length) {
       setMessages(cached)
       setHasMore(cached.length >= 40)
       setLoading(false)
     } else {
+      setMessages([])
       setLoading(true)
     }
 
-    Promise.race([
-      supabase.from('messages').select('*')
+    async function pullMessages() {
+      const { data, error } = await supabase.from('messages').select('*')
         .eq('room', room)
         .order('created_at', { ascending: false })
-        .limit(40),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 20000)),
-    ])
-      .then(({ data }) => {
-        const msgs = [...(data || [])].reverse()
-        setMessages(msgs)
-        setCachedMessages(room, msgs)
-        setHasMore((data?.length || 0) >= 40)
-        setLoading(false)
-        // Загружаем аватары всех участников
-        const ids = [...new Set(msgs.map(m => m.user_id).filter(Boolean))]
-        if (ids.length) {
-          supabase.from('profiles').select('id, avatar_url').in('id', ids)
-            .then(({ data: profiles }) => {
-              if (!profiles) return
-              const map = {}
-              profiles.forEach(p => { map[p.id] = p.avatar_url || null })
-              setUserAvatars(map)
-            })
-        }
-      })
-      .catch(() => {
-        setLoading(false)
-        if (!cached?.length) setLoadError(true)
-      })
+        .limit(40)
 
-    // Записываем что я сейчас читаю этот чат
+      if (cancelled) return
+      if (error) throw error
+
+      const msgs = [...(data || [])].reverse()
+      setMessages(msgs)
+      if (msgs.length > 0) setCachedMessages(room, msgs)
+      setHasMore((data?.length || 0) >= 40)
+      setLoading(false)
+      setLoadError(false)
+      setRetryAttempt(0)
+
+      const ids = [...new Set(msgs.map(m => m.user_id).filter(Boolean))]
+      if (ids.length) {
+        supabase.from('profiles').select('id, avatar_url').in('id', ids)
+          .then(({ data: profiles }) => {
+            if (!profiles || cancelled) return
+            const map = {}
+            profiles.forEach(p => { map[p.id] = p.avatar_url || null })
+            setUserAvatars(map)
+          })
+      }
+    }
+
+    pullMessages().catch((err) => {
+      if (cancelled) return
+      setLoading(false)
+      setLastErrMsg(err?.message || String(err))
+      if (!cached?.length) setLoadError(true)
+    })
+
+    // Polling — основной способ обновления на медленной сети без VPN
+    const poll = setInterval(() => { pullMessages().catch(() => {}) }, 15000)
+
     const now = new Date().toISOString()
-    supabase.from('chat_reads').upsert(
+    void supabase.from('chat_reads').upsert(
       { user_id: user.id, room, last_read_at: now },
-      { onConflict: 'user_id,room' }
+      { onConflict: 'user_id,room' },
     )
 
-    // Читаем когда другие последний раз были в этом чате
-    supabase.from('chat_reads')
+    void supabase.from('chat_reads')
       .select('last_read_at')
       .eq('room', room)
       .neq('user_id', user.id)
@@ -328,21 +343,17 @@ export default function ChatPage() {
         if (data?.[0]) setLastReadAt(new Date(data[0].last_read_at))
       })
 
-    const channel = supabase.channel('messages-all')
+    // Realtime — бонус, если WebSocket доступен; не блокируем UI
+    const channel = supabase.channel(`chat-${room}-${user.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         ({ new: msg }) => {
-          if (msg.room === room) {
-            setMessages(prev => prev.find(m => m.id === msg.id) ? prev : [...prev, msg])
-            // Подгружаем аватар нового участника если его ещё нет в карте
-            setUserAvatars(prev => {
-              if (msg.user_id in prev) return prev
-              supabase.from('profiles').select('avatar_url').eq('id', msg.user_id).single()
-                .then(({ data }) => {
-                  setUserAvatars(p => ({ ...p, [msg.user_id]: data?.avatar_url || null }))
-                })
-              return prev
-            })
-          }
+          if (msg.room !== room) return
+          setMessages(prev => {
+            if (prev.find(m => m.id === msg.id)) return prev
+            const next = [...prev, msg]
+            setCachedMessages(room, next)
+            return next
+          })
         })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' },
         ({ new: msg }) => {
@@ -350,43 +361,13 @@ export default function ChatPage() {
             setMessages(prev => prev.map(m => m.id === msg.id ? msg : m))
         })
       .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
-        ({ old }) => {
-          setMessages(prev => prev.filter(m => m.id !== old.id))
-        })
-      // Слушаем когда другие открывают чат (обновляют last_read_at)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_reads' },
-        ({ new: row }) => {
-          if (row.room === room && row.user_id !== user.id)
-            setLastReadAt(new Date(row.last_read_at))
-        })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chat_reads' },
-        ({ new: row }) => {
-          if (row.room === room && row.user_id !== user.id)
-            setLastReadAt(prev => {
-              const newDate = new Date(row.last_read_at)
-              return (!prev || newDate > prev) ? newDate : prev
-            })
-        })
+        ({ old }) => setMessages(prev => prev.filter(m => m.id !== old.id)))
       .subscribe()
 
-    // Presence — реальный онлайн
-    const presenceChannel = supabase.channel(`presence:${room}`, {
-      config: { presence: { key: user.id } }
-    })
-    presenceChannel
-      .on('presence', { event: 'sync' }, () => {
-        const state = presenceChannel.presenceState()
-        setOnline(Object.keys(state).length)
-      })
-      .subscribe(async status => {
-        if (status === 'SUBSCRIBED') {
-          await presenceChannel.track({ user_id: user.id, room })
-        }
-      })
-
     return () => {
+      cancelled = true
+      clearInterval(poll)
       supabase.removeChannel(channel)
-      supabase.removeChannel(presenceChannel)
     }
   }, [room, user?.id, reloadKey])
 
@@ -456,7 +437,7 @@ export default function ChatPage() {
   async function sendMessage() {
     const content = text.trim()
     if (!content || sending || !user) return
-    setSending(true); setText('')
+    setText('')
 
     // Оптимистичное сообщение — показываем сразу со статусом pending
     const tempId = 'pending-' + Date.now()
@@ -467,42 +448,62 @@ export default function ChatPage() {
       reply_to_id: replyTo?.id || null,
       reply_to_name: replyTo?.name || null,
       reply_to_text: replyTo?.text || null,
+      reply_to_user_id: replyTo?.userId || null,
     }
     setMessages(prev => [...prev, tempMsg])
-
-    const { data, error } = await supabase.from('messages').insert({
-      user_id: user.id, user_name: userName, user_level: userLevel, user_avatar: userAvatar, content, room,
-      reply_to_id: replyTo?.id || null,
-      reply_to_name: replyTo?.name || null,
-      reply_to_text: replyTo?.text || null,
-    }).select().single()
-
-    setSending(false)
-    const pendingReply = replyTo
     setReplyTo(null)
     inputRef.current?.focus()
 
-    if (error) {
-      setMessages(prev => prev.filter(m => m.id !== tempId))
-      setSendError(`Ошибка: ${error.message}`); setTimeout(() => setSendError(''), 5000); return
-    }
-    if (data) {
-      // Заменяем pending на реальное сообщение
-      setMessages(prev => prev.map(m => m.id === tempId ? data : m).filter((m, i, arr) => m.id === data.id ? arr.findIndex(x => x.id === data.id) === i : true))
-      addNur(3, user, profile, setProfile)
+    await deliverMessage(tempMsg)
+  }
 
-      // Пуш-уведомление автору оригинального сообщения
-      if (pendingReply?.userId && pendingReply.userId !== user.id) {
-        supabase.functions.invoke('send-push', {
-          body: {
-            recipient_id: pendingReply.userId,
-            title: `${userName} ответил(а) вам`,
-            body:  content.slice(0, 100),
-            url:   `/chat?highlight=${data.id}`,
-            tag:   `reply-${data.id}`,
-          }
-        }).catch(() => {}) // не блокируем UI при ошибке
-      }
+  // Повторная отправка не доставленного сообщения (по тапу на него)
+  function retryMessage(msg) {
+    if (sending || !msg.failed) return
+    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, pending: true, failed: false } : m))
+    deliverMessage(msg)
+  }
+
+  // Отправляет сообщение на сервер; при сбое сети помечает его как «не доставлено»,
+  // не убирая из чата — повтор делается тапом, без автоспама запросов
+  async function deliverMessage(tempMsg) {
+    setSending(true)
+    let data = null, error = null
+    try {
+      const res = await supabase.from('messages').insert({
+        user_id: tempMsg.user_id, user_name: tempMsg.user_name, user_level: tempMsg.user_level, user_avatar: tempMsg.user_avatar,
+        content: tempMsg.content, room: tempMsg.room,
+        reply_to_id: tempMsg.reply_to_id,
+        reply_to_name: tempMsg.reply_to_name,
+        reply_to_text: tempMsg.reply_to_text,
+      }).select().single()
+      data = res.data; error = res.error
+    } catch (err) {
+      error = err
+    }
+    setSending(false)
+    inputRef.current?.focus()
+
+    if (error || !data) {
+      setMessages(prev => prev.map(m => m.id === tempMsg.id ? { ...m, pending: false, failed: true } : m))
+      return
+    }
+
+    // Заменяем pending на реальное сообщение
+    setMessages(prev => prev.map(m => m.id === tempMsg.id ? data : m).filter((m, i, arr) => m.id === data.id ? arr.findIndex(x => x.id === data.id) === i : true))
+    addNur(3, user, profile, setProfile)
+
+    // Пуш-уведомление автору оригинального сообщения
+    if (tempMsg.reply_to_user_id && tempMsg.reply_to_user_id !== user.id) {
+      supabase.functions.invoke('send-push', {
+        body: {
+          recipient_id: tempMsg.reply_to_user_id,
+          title: `${userName} ответил(а) вам`,
+          body:  tempMsg.content.slice(0, 100),
+          url:   `/chat?highlight=${data.id}`,
+          tag:   `reply-${data.id}`,
+        }
+      }).catch(() => {}) // не блокируем UI при ошибке
     }
   }
 
@@ -607,7 +608,7 @@ export default function ChatPage() {
     // Оптимистично обновляем локальный стейт
     setMessages(prev => prev.map(m => {
       if (m.id !== msgId) return m
-      const reactions = { ...(m.reactions || {}) }
+      const reactions = normalizeReactions(m.reactions)
       const users = [...(reactions[emoji] || [])]
       const idx = users.indexOf(user.id)
       if (idx >= 0) users.splice(idx, 1)
@@ -618,7 +619,7 @@ export default function ChatPage() {
     }))
     // Читаем актуальное из БД и обновляем
     const { data } = await supabase.from('messages').select('reactions').eq('id', msgId).single()
-    const reactions = { ...(data?.reactions || {}) }
+    const reactions = normalizeReactions(data?.reactions)
     const users = [...(reactions[emoji] || [])]
     const idx = users.indexOf(user.id)
     if (idx >= 0) users.splice(idx, 1)
@@ -648,7 +649,7 @@ export default function ChatPage() {
     }, 0)
   }
 
-  const currentRoom = ROOMS.find(r => r.id === room)
+  const currentRoom = ROOMS.find(r => r.id === room) || ROOMS[0]
 
   return (
     <div style={s.page}>
@@ -673,10 +674,10 @@ export default function ChatPage() {
             <button key={r.id} style={{ ...s.roomBtn, ...(room === r.id ? s.roomBtnActive : {}) }}
               onClick={() => {
                 if (r.genderOnly && profile?.gender !== r.genderOnly) {
-                  setRoom(r.id)
+                  setRoom(r.id); setRetryAttempt(0)
                   setGenderBlocked(true)
                 } else {
-                  setRoom(r.id)
+                  setRoom(r.id); setRetryAttempt(0)
                   setGenderBlocked(false)
                 }
               }}>
@@ -692,10 +693,11 @@ export default function ChatPage() {
         {loadError ? (
           <div style={s.empty}>
             <div style={s.emptyIcon}>📡</div>
-            <div style={s.emptyTitle}>Сервер отвечает медленно</div>
-            <div style={s.emptySub}>Не удалось загрузить чат. Проверьте интернет и попробуйте ещё раз</div>
+            <div style={s.emptyTitle}>Сервер не отвечает</div>
+            <div style={s.emptySub}>Проверьте интернет и попробуйте ещё раз</div>
+            {lastErrMsg && <div style={{ ...s.emptySub, opacity: .6, marginTop: 4 }}>({lastErrMsg})</div>}
             <button className="btn btn-primary" style={{ marginTop: 14 }}
-              onClick={() => setReloadKey(k => k + 1)}>
+              onClick={() => { setRetryAttempt(0); setReloadKey(k => k + 1) }}>
               Повторить
             </button>
           </div>
@@ -762,6 +764,7 @@ export default function ChatPage() {
                     onReply={handleReply}
                     onDelete={deleteMessage}
                     onReaction={toggleReaction}
+                    onRetry={retryMessage}
                   />
                 </div>
               )
@@ -891,12 +894,27 @@ export default function ChatPage() {
   )
 }
 
-// Проверяем — сообщение только из эмодзи (1-3 штуки)
-const EMOJI_RE = /^\p{Emoji_Presentation}+$/u
+// Проверяем — сообщение только из эмодзи (без \p{} — старый WebView Android падает)
 function isEmojiOnly(text) {
   if (!text) return false
-  const segs = [...(text.match(/\p{Emoji_Presentation}/gu) || [])]
-  return segs.length > 0 && segs.length <= 3 && text.replace(/\s/g,'') === segs.join('')
+  const stripped = text.replace(/\s/g, '')
+  if (!stripped || stripped.length > 12) return false
+  return !/[0-9A-Za-z\u0400-\u04FF.,!?;:'"()\-]/.test(stripped)
+}
+
+function normalizeReactions(raw) {
+  if (!raw) return {}
+  let r = raw
+  if (typeof r === 'string') {
+    try { r = JSON.parse(r) } catch { return {} }
+  }
+  if (typeof r !== 'object' || Array.isArray(r)) return {}
+  const out = {}
+  for (const [emoji, users] of Object.entries(r)) {
+    if (Array.isArray(users)) out[emoji] = users.filter(Boolean)
+    else if (users) out[emoji] = [users]
+  }
+  return out
 }
 
 function BigAnimEmoji({ emoji }) {
@@ -921,7 +939,7 @@ function Avatar({ src, letter, style }) {
   )
 }
 
-function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction }) {
+function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry }) {
   const letter  = msg.user_name?.charAt(0).toUpperCase() || '?'
   // Если профиль загружен (avatarSrcOverride !== undefined) — используем только его значение.
   // Это гарантирует что удалённый аватар не показывается из старых сообщений.
@@ -932,7 +950,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
 
   const emojiOnly = !msg.file_type && isEmojiOnly(msg.content)
   const lvl = msg.user_level ? LEVEL_BADGES[msg.user_level] : null
-  const reactions = msg.reactions || {}
+  const reactions = normalizeReactions(msg.reactions)
   const hasReactions = Object.keys(reactions).length > 0
 
   function toggleAudio() {
@@ -1001,7 +1019,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
   )
 
   if (emojiOnly) {
-    const emojis = [...(msg.content.match(/\p{Emoji_Presentation}/gu) || [])]
+    const emojis = [...msg.content.replace(/\s/g, '')]
     return (
       <div style={{ ...b.row, justifyContent: isMe ? 'flex-end' : 'flex-start', animation:'msgIn .25s ease' }}>
         {!isMe && <Avatar src={avatarSrc} letter={letter} style={b.avatarOther} />}
@@ -1013,9 +1031,10 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
             </div>
           )}
           <div
-            style={{ display:'flex', gap:4, padding:'4px 8px', cursor:'pointer' }}
+            style={{ display:'flex', gap:4, padding:'4px 8px', cursor:'pointer', opacity: msg.failed ? 0.6 : 1 }}
             onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
             onContextMenu={e => { e.preventDefault(); onMenu() }}
+            onClick={() => { if (msg.failed) onRetry?.(msg) }}
           >
             {emojis.map((e, i) => <BigAnimEmoji key={i} emoji={e} />)}
           </div>
@@ -1024,6 +1043,11 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
             {formatTime(msg.created_at)}
             {isMe && <MsgStatus msg={msg} lastReadAt={lastReadAt} />}
           </div>
+          {msg.failed && (
+            <div style={{ ...b.time, color: '#ff5f5f', textAlign: isMe ? 'right' : 'left', paddingRight:8 }}>
+              Не доставлено · нажмите для повтора
+            </div>
+          )}
         </div>
         {isMe && <Avatar src={avatarSrc} letter={letter} style={b.avatarMe} />}
       </div>
@@ -1043,13 +1067,18 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
         )}
 
         <div
-          style={{ ...(isMe ? b.bubbleMe : b.bubbleThem), cursor:'pointer', userSelect:'none' }}
+          style={{ ...(isMe ? b.bubbleMe : b.bubbleThem), cursor:'pointer', userSelect:'none', opacity: msg.failed ? 0.6 : 1 }}
           onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
           onContextMenu={e => { e.preventDefault(); onMenu() }}
-          onClick={() => { if (!menuOpen) {} }}
+          onClick={() => { if (msg.failed) onRetry?.(msg) }}
         >
           {bubbleContent}
         </div>
+        {msg.failed && (
+          <div style={{ ...b.time, color: '#ff5f5f', textAlign: isMe ? 'right' : 'left', paddingRight: 8, paddingLeft: 8 }}>
+            Не доставлено · нажмите для повтора
+          </div>
+        )}
 
         {hasReactions && <ReactionsRow reactions={reactions} userId={userId} msgId={msg.id} onReaction={onReaction} />}
       </div>
@@ -1063,8 +1092,9 @@ function ReactionsRow({ reactions, userId, msgId, onReaction }) {
   return (
     <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginTop:4, paddingLeft:2, paddingRight:2 }}>
       {Object.entries(reactions).map(([emoji, users]) => {
-        const iMine = users.includes(userId)
-        const count = users.length
+        const list = Array.isArray(users) ? users : []
+        const iMine = list.includes(userId)
+        const count = list.length
         return (
           <button key={emoji} onClick={() => onReaction(msgId, emoji)}
             style={{ ...b.reactionPill, background: iMine ? 'rgba(201,168,76,.2)' : 'rgba(255,255,255,.06)', borderColor: iMine ? 'rgba(201,168,76,.5)' : 'rgba(255,255,255,.12)' }}>
