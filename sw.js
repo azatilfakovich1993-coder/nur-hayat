@@ -2,10 +2,10 @@ try {
   self["workbox:core:7.3.0"] && _();
 } catch {
 }
-const Q = (n, ...e) => {
+const z = (n, ...e) => {
   let t = n;
   return e.length > 0 && (t += ` :: ${JSON.stringify(e)}`), t;
-}, J = Q;
+}, J = z;
 class l extends Error {
   /**
    *
@@ -900,7 +900,7 @@ try {
 } catch {
 }
 const V = "GET", E = (n) => n && typeof n == "object" ? n : { handle: n };
-class g {
+class m {
   /**
    * Constructor for Route class.
    *
@@ -924,7 +924,7 @@ class g {
     this.catchHandler = E(e);
   }
 }
-class ue extends g {
+class ue extends m {
   /**
    * If the regular expression contains
    * [capture groups]{@link https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/RegExp#grouping-back-references},
@@ -1131,16 +1131,16 @@ class de {
 }
 let R;
 const fe = () => (R || (R = new de(), R.addFetchListener(), R.addCacheListener()), R);
-function m(n, e, t) {
+function g(n, e, t) {
   let s;
   if (typeof n == "string") {
     const r = new URL(n, location.href), i = ({ url: c }) => c.href === r.href;
-    s = new g(i, e, t);
+    s = new m(i, e, t);
   } else if (n instanceof RegExp)
     s = new ue(n, e, t);
   else if (typeof n == "function")
-    s = new g(n, e, t);
-  else if (n instanceof g)
+    s = new m(n, e, t);
+  else if (n instanceof m)
     s = n;
   else
     throw new l("unsupported-route-type", {
@@ -1155,7 +1155,7 @@ function pe(n, e = []) {
     e.some((s) => s.test(t)) && n.searchParams.delete(t);
   return n;
 }
-function* ge(n, { ignoreURLParametersMatching: e = [/^utm_/, /^fbclid$/], directoryIndex: t = "index.html", cleanURLs: s = !0, urlManipulation: a } = {}) {
+function* me(n, { ignoreURLParametersMatching: e = [/^utm_/, /^fbclid$/], directoryIndex: t = "index.html", cleanURLs: s = !0, urlManipulation: a } = {}) {
   const r = new URL(n, location.href);
   r.hash = "", yield r.href;
   const i = pe(r, e);
@@ -1173,7 +1173,7 @@ function* ge(n, { ignoreURLParametersMatching: e = [/^utm_/, /^fbclid$/], direct
       yield o.href;
   }
 }
-class me extends g {
+class ge extends m {
   /**
    * @param {PrecacheController} precacheController A `PrecacheController`
    * instance used to both match requests and respond to fetch events.
@@ -1193,7 +1193,7 @@ class me extends g {
   constructor(e, t) {
     const s = ({ request: a }) => {
       const r = e.getURLsToCacheKeys();
-      for (const i of ge(a.url, t)) {
+      for (const i of me(a.url, t)) {
         const c = r.get(i);
         if (c) {
           const o = e.getIntegrityForCacheKey(c);
@@ -1205,8 +1205,8 @@ class me extends g {
   }
 }
 function we(n) {
-  const e = v(), t = new me(e, n);
-  m(t);
+  const e = v(), t = new ge(e, n);
+  g(t);
 }
 const ye = "-precache-", _e = async (n, e = ye) => {
   const s = (await self.caches.keys()).filter((a) => a.includes(e) && a.includes(self.registration.scope) && a !== n);
@@ -1238,7 +1238,7 @@ function G(n) {
 function Te() {
   self.addEventListener("activate", () => self.clients.claim());
 }
-class De extends g {
+class De extends m {
   /**
    * If both `denylist` and `allowlist` are provided, the `denylist` will
    * take precedence and the request will not match this route.
@@ -1432,7 +1432,7 @@ function Ne() {
     IDBCursor.prototype.continuePrimaryKey
   ]);
 }
-const $ = /* @__PURE__ */ new WeakMap(), N = /* @__PURE__ */ new WeakMap(), z = /* @__PURE__ */ new WeakMap(), U = /* @__PURE__ */ new WeakMap(), A = /* @__PURE__ */ new WeakMap();
+const $ = /* @__PURE__ */ new WeakMap(), N = /* @__PURE__ */ new WeakMap(), Q = /* @__PURE__ */ new WeakMap(), U = /* @__PURE__ */ new WeakMap(), A = /* @__PURE__ */ new WeakMap();
 function Ie(n) {
   const e = new Promise((t, s) => {
     const a = () => {
@@ -1470,7 +1470,7 @@ let I = {
       if (e === "done")
         return N.get(n);
       if (e === "objectStoreNames")
-        return n.objectStoreNames || z.get(n);
+        return n.objectStoreNames || Q.get(n);
       if (e === "store")
         return t.objectStoreNames[1] ? void 0 : t.objectStore(t.objectStoreNames[0]);
     }
@@ -1489,7 +1489,7 @@ function ve(n) {
 function Se(n) {
   return n === IDBDatabase.prototype.transaction && !("objectStoreNames" in IDBTransaction.prototype) ? function(e, ...t) {
     const s = n.call(k(this), e, ...t);
-    return z.set(s, e.sort ? e.sort() : [e]), f(s);
+    return Q.set(s, e.sort ? e.sort() : [e]), f(s);
   } : Ne().includes(n) ? function(...e) {
     return n.apply(k(this), e), f($.get(this));
   } : function(...e) {
@@ -1843,12 +1843,12 @@ class T {
 }
 self.skipWaiting();
 Te();
-xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"7aef79612c233fe9c99c2ef278301c96","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-j4mYiVWt.js"},{"revision":null,"url":"assets/web-DDXZlvO7.js"},{"revision":null,"url":"assets/web-B51TAdcm.js"},{"revision":null,"url":"assets/web-B4D-6JjN.js"},{"revision":null,"url":"assets/verses-DgTBTllg.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-BKMK_I8U.js"},{"revision":null,"url":"assets/nur-CIk_HxYy.js"},{"revision":null,"url":"assets/index-C_mv7hWv.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/fetchVerse-DDvB8ZsG.js"},{"revision":null,"url":"assets/SuraPage-CnYUzkyK.js"},{"revision":null,"url":"assets/SplashPage-CioL4kAj.js"},{"revision":null,"url":"assets/QuranPage-gP-OPWcG.js"},{"revision":null,"url":"assets/ProfilePage-B75u_2eN.js"},{"revision":null,"url":"assets/PrayerPage-C3CN5L3Y.js"},{"revision":null,"url":"assets/OnboardingPage-D-NZKm1c.js"},{"revision":null,"url":"assets/LearnPage-DJ81g-Ba.js"},{"revision":null,"url":"assets/HomePage-CT2cDt0D.js"},{"revision":null,"url":"assets/ChatPage-vWwPXtsc.js"},{"revision":null,"url":"assets/BeginnerPath-OjEq97po.js"},{"revision":null,"url":"assets/AuthPage-vnf2DbO7.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
+xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"ced27e8febc3bc8e21d2f42e38b6ebc8","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-XDWLAov8.js"},{"revision":null,"url":"assets/web-DvssVhle.js"},{"revision":null,"url":"assets/web-DCUEptMQ.js"},{"revision":null,"url":"assets/web-B5_l5clN.js"},{"revision":null,"url":"assets/verses-DgTBTllg.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-BKMK_I8U.js"},{"revision":null,"url":"assets/nur--8-2Ki2x.js"},{"revision":null,"url":"assets/index-mqE_eyW5.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/fetchVerse-DDvB8ZsG.js"},{"revision":null,"url":"assets/SuraPage-ET95JVDY.js"},{"revision":null,"url":"assets/SplashPage-DjmUt75q.js"},{"revision":null,"url":"assets/QuranPage-C98yU_Q5.js"},{"revision":null,"url":"assets/ProfilePage-CVuhqDmk.js"},{"revision":null,"url":"assets/PrayerPage-BcvbIjQw.js"},{"revision":null,"url":"assets/OnboardingPage-B6Y2R8Nf.js"},{"revision":null,"url":"assets/LearnPage-CMHUhAi4.js"},{"revision":null,"url":"assets/HomePage-CvhnhaAi.js"},{"revision":null,"url":"assets/ChatPage-6CQ0NbZk.js"},{"revision":null,"url":"assets/BeginnerPath-Bnvda3mM.js"},{"revision":null,"url":"assets/AuthPage-Y24S4slV.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
 Re();
-m(
+g(
   new De(be("index.html"))
 );
-m(
+g(
   /\/quran-data\/\d+\.json$/i,
   new S({
     cacheName: "quran-data-cache",
@@ -1856,7 +1856,7 @@ m(
   }),
   "GET"
 );
-m(
+g(
   /^https:\/\/cdn\.islamic\.network\/quran\/audio(-surah)?\/.*/i,
   new S({
     cacheName: "quran-audio-cache",
@@ -1864,7 +1864,7 @@ m(
   }),
   "GET"
 );
-m(
+g(
   /^https:\/\/api\.alquran\.cloud\/.*/i,
   new S({
     cacheName: "quran-api-cache",
@@ -1872,8 +1872,8 @@ m(
   }),
   "GET"
 );
-m(
-  /^https:\/\/bwnzfyxcgzscghowpqfn\.supabase\.co\/rest\/.*/i,
+g(
+  /^https:\/\/nurhayat\.ru\/rest\/.*/i,
   new Ue({
     cacheName: "supabase-api-cache",
     networkTimeoutSeconds: 6,
