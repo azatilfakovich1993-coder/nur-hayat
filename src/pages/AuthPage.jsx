@@ -81,7 +81,8 @@ export default function AuthPage() {
           email:    full.email,
           password: full.password,
           options:  { data: { name: full.name } }
-        })
+        }),
+        20000,
       )
       if (signUpErr) {
         // Если email уже занят — аккаунт был создан раньше (таймаут), переключаем на вход
@@ -110,7 +111,8 @@ export default function AuthPage() {
           nur:            10,
           streak:         1,
           onboarded:      false
-        }).select().single()
+        }).select().single(),
+        20000,
       )
       if (profileErr) { setError('Ошибка сохранения профиля'); return }
       setProfile(newProfile)
