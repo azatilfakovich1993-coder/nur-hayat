@@ -1,3 +1,10 @@
 RewriteEngine On
+
+# Apache по умолчанию не передаёт заголовок Authorization в PHP —
+# без него Supabase считает запрос анонимным, и RLS-защищённые
+# таблицы (например messages) возвращают пустой результат вместо данных.
+RewriteCond %{HTTP:Authorization} ^(.+)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [QSA,L]

@@ -10,10 +10,21 @@ $url    = 'https://' . $SUPABASE_HOST . $path;
 $method = $_SERVER['REQUEST_METHOD'];
 
 $headers = [];
+$hasAuth = false;
 foreach (getallheaders() as $name => $value) {
     $lower = strtolower($name);
     if (in_array($lower, ['host', 'content-length', 'connection'], true)) continue;
+    if ($lower === 'authorization') $hasAuth = true;
     $headers[] = "$name: $value";
+}
+
+// Apache часто не пробрасывает Authorization в getallheaders() — без него
+// Supabase считает запрос анонимным, и RLS-защищённые таблицы (messages)
+// возвращают пустой результат вместо реальных данных. Добираем заголовок
+// из переменных окружения, которые .htaccess сохраняет отдельно.
+if (!$hasAuth) {
+    $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null;
+    if ($auth) $headers[] = "Authorization: $auth";
 }
 
 $body = file_get_contents('php://input');
