@@ -49,6 +49,8 @@ function ChatUnreadProvider({ children }) {
   const location = useLocation()
   const [unread, setUnread] = useState(0)
   const onChat = location.pathname === '/chat'
+  const onChatRef = useRef(onChat)
+  useEffect(() => { onChatRef.current = onChat }, [onChat])
 
   // Сбрасываем счётчик и сохраняем время когда заходим в чат
   useEffect(() => {
@@ -58,18 +60,25 @@ function ChatUnreadProvider({ children }) {
     }
   }, [onChat, user?.id])
 
-  // При запуске считаем непрочитанные из БД
+  // Считаем непрочитанные из БД: сразу и каждые 5 сек, пока не в чате
+  // (Realtime ниже — бонус, если WebSocket доступен)
   useEffect(() => {
     if (!user) return
-    const lastRead = localStorage.getItem('chat-last-read-' + user.id) || '1970-01-01T00:00:00Z'
-    supabase
-      .from('messages')
-      .select('id', { count: 'exact', head: true })
-      .neq('user_id', user.id)
-      .gt('created_at', lastRead)
-      .then(({ count }) => {
-        if (count > 0) setUnread(count)
-      })
+
+    async function refreshUnread() {
+      if (onChatRef.current) return
+      const lastRead = localStorage.getItem('chat-last-read-' + user.id) || '1970-01-01T00:00:00Z'
+      const { count } = await supabase
+        .from('messages')
+        .select('id', { count: 'exact', head: true })
+        .neq('user_id', user.id)
+        .gt('created_at', lastRead)
+      setUnread(count || 0)
+    }
+
+    refreshUnread()
+    const poll = setInterval(refreshUnread, 5000)
+    return () => clearInterval(poll)
   }, [user?.id])
 
   // Realtime: считаем новые сообщения пока не в чате
@@ -78,7 +87,7 @@ function ChatUnreadProvider({ children }) {
     const channel = supabase.channel('unread-tracker')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
         ({ new: msg }) => {
-          if (msg.user_id !== user.id && location.pathname !== '/chat') {
+          if (msg.user_id !== user.id && !onChatRef.current) {
             setUnread(n => n + 1)
           }
         })
