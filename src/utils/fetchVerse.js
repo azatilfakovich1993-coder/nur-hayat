@@ -1,5 +1,25 @@
 import { TRANSLITERATIONS } from '../data/verses'
 
+// Конвертация латинской транскрипции tanzil.net → кириллица
+function latinToCyrillicFull(text) {
+  if (!text) return ''
+  const s = text
+    .replace(/[''ʿʾ`]/g, '')   // убираем хамза/айн маркеры
+    .replace(/[Đđ]/g, 'д')      // Đ = ض (эмфатический д)
+    .toLowerCase()
+  const r = s
+    .replace(/sh/g, 'ш').replace(/kh/g, 'х').replace(/gh/g, 'г')
+    .replace(/th/g, 'с').replace(/dh/g, 'з')
+    .replace(/[āa]/g, 'а').replace(/b/g, 'б').replace(/d/g, 'д')
+    .replace(/e/g, 'е').replace(/f/g, 'ф').replace(/h/g, 'х')
+    .replace(/[īi]/g, 'и').replace(/j/g, 'дж').replace(/k/g, 'к')
+    .replace(/l/g, 'л').replace(/m/g, 'м').replace(/n/g, 'н')
+    .replace(/o/g, 'о').replace(/q/g, 'к').replace(/r/g, 'р')
+    .replace(/s/g, 'с').replace(/t/g, 'т').replace(/[ūu]/g, 'у')
+    .replace(/w/g, 'в').replace(/y/g, 'й').replace(/z/g, 'з')
+  return r ? r[0].toUpperCase() + r.slice(1) : r
+}
+
 // Данные Корана лежат в public/quran-data/<сура>.json — по одному файлу на суру
 // (вместо одного бандла на 2.3 МБ). Так открытие суры скачивает только её часть —
 // критично для пользователей на медленном мобильном интернете.
@@ -33,7 +53,7 @@ export async function fetchVerse(key) {
     arabic:          v?.a || '',
     // Сначала — наша русская транскрипция (вручную составлена для аятов дня),
     // иначе — латинская транскрипция из общей базы (английский стиль tanzil.net)
-    transliteration: TRANSLITERATIONS[key] || v?.t || '',
+    transliteration: TRANSLITERATIONS[key] || latinToCyrillicFull(v?.t) || '',
     translation:     v?.k || '',
     ref:             key,
     fromCache:       false,

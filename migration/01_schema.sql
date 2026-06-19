@@ -192,6 +192,31 @@ create policy "Users can delete own media"
   on storage.objects for delete
   using (bucket_id = 'chat-media' and auth.uid()::text = (storage.foldername(name))[1]);
 
+-- ── 10. STORAGE: avatars ─────────────────────────────────────
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'avatars', 'avatars', true,
+  5242880,  -- 5 MB
+  array['image/jpeg','image/png','image/webp','image/gif']
+)
+on conflict (id) do nothing;
+
+create policy "Avatar images are publicly accessible"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
+
+create policy "Users can upload own avatar"
+  on storage.objects for insert
+  with check (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users can update own avatar"
+  on storage.objects for update
+  using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+
+create policy "Users can delete own avatar"
+  on storage.objects for delete
+  using (bucket_id = 'avatars' and auth.uid()::text = (storage.foldername(name))[1]);
+
 -- ── Realtime для messages ────────────────────────────────────
 alter publication supabase_realtime add table public.messages;
 alter publication supabase_realtime add table public.chat_reads;

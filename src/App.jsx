@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'r
 import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { useFcmToken } from './hooks/useFcmToken'
+import { useDailyVerseNotif } from './hooks/useDailyVerseNotif'
 import { supabase } from './supabase/client'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
@@ -192,6 +193,7 @@ function PushSetup() {
   const navigate = useNavigate()
   usePushNotifications(user)
   useFcmToken(user, navigate)
+  useDailyVerseNotif(user)
   return null
 }
 

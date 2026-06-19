@@ -173,6 +173,27 @@ export default function ProfilePage() {
     if (profile?.avatar_url) setAvatarUrl(profile.avatar_url)
   }, [profile?.avatar_url])
 
+  function resizeToBase64(file, size = 200) {
+    return new Promise((resolve, reject) => {
+      const img = new Image()
+      const url = URL.createObjectURL(file)
+      img.onload = () => {
+        URL.revokeObjectURL(url)
+        const canvas = document.createElement('canvas')
+        canvas.width = size
+        canvas.height = size
+        const ctx = canvas.getContext('2d')
+        const min = Math.min(img.width, img.height)
+        const sx = (img.width - min) / 2
+        const sy = (img.height - min) / 2
+        ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size)
+        resolve(canvas.toDataURL('image/jpeg', 0.85))
+      }
+      img.onerror = reject
+      img.src = url
+    })
+  }
+
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0]
     if (!file || !user) return
@@ -180,16 +201,10 @@ export default function ProfilePage() {
     if (!file.type.startsWith('image/')) return
     setAvatarLoading(true)
     try {
-      const ext  = file.name.split('.').pop()
-      const path = `${user.id}/avatar.${ext}`
-      await supabase.storage.from('avatars').remove([path])
-      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true })
-      if (upErr) throw upErr
-      const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path)
-      const url = publicUrl + '?t=' + Date.now()
-      setAvatarUrl(url)
-      await supabase.from('profiles').update({ avatar_url: url }).eq('id', user.id)
-      setProfile(p => ({ ...p, avatar_url: url }))
+      const base64 = await resizeToBase64(file, 200)
+      await supabase.from('profiles').update({ avatar_url: base64 }).eq('id', user.id)
+      setAvatarUrl(base64)
+      setProfile(p => ({ ...p, avatar_url: base64 }))
     } catch (err) {
       console.error('Avatar upload error:', err.message)
     } finally {
@@ -201,16 +216,8 @@ export default function ProfilePage() {
     if (!user || !avatarUrl) return
     setAvatarLoading(true)
     try {
-      // Удаляем все возможные расширения
-      await supabase.storage.from('avatars').remove([
-        `${user.id}/avatar.jpg`,
-        `${user.id}/avatar.jpeg`,
-        `${user.id}/avatar.png`,
-        `${user.id}/avatar.webp`,
-        `${user.id}/avatar.gif`,
-      ])
-      setAvatarUrl(null)
       await supabase.from('profiles').update({ avatar_url: null }).eq('id', user.id)
+      setAvatarUrl(null)
       setProfile(p => ({ ...p, avatar_url: null }))
     } catch (err) {
       console.error('Avatar delete error:', err.message)

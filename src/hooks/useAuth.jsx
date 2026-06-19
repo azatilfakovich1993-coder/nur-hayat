@@ -37,6 +37,10 @@ function readStoredUser() {
   }
 }
 
+function clearProgress() {
+  PROGRESS_KEYS.forEach(key => localStorage.removeItem(key))
+}
+
 function restoreProgress(progress) {
   if (!progress || typeof progress !== 'object') return
   Object.entries(progress).forEach(([key, value]) => {
@@ -128,6 +132,9 @@ export function AuthProvider({ children }) {
       }
 
       if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        const lastUid = localStorage.getItem('nur-hayat-last-uid')
+        if (lastUid !== u.id) clearProgress()
+        localStorage.setItem('nur-hayat-last-uid', u.id)
         const cached = getCachedProfile(u.id)
         if (cached) {
           setProfile(cached)
@@ -253,6 +260,8 @@ export function AuthProvider({ children }) {
         new Promise(r => setTimeout(r, 3000)),
       ])
     }
+    clearProgress()
+    localStorage.removeItem('nur-hayat-last-uid')
     try {
       await Promise.race([
         supabase.auth.signOut(),

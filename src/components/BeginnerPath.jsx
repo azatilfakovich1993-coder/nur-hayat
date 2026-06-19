@@ -243,13 +243,15 @@ function getAutoComplete() {
   return { alphabet: alphabetDone, fatiha: fatihaDone, surahProgress }
 }
 
-function loadProgress() {
-  try { return JSON.parse(localStorage.getItem('beginner_path') || '{}') }
+function loadProgress(userId) {
+  const key = userId ? `beginner_path_${userId}` : 'beginner_path'
+  try { return JSON.parse(localStorage.getItem(key) || '{}') }
   catch { return {} }
 }
 
-function saveProgress(p) {
-  localStorage.setItem('beginner_path', JSON.stringify(p))
+function saveProgress(p, userId) {
+  const key = userId ? `beginner_path_${userId}` : 'beginner_path'
+  localStorage.setItem(key, JSON.stringify(p))
 }
 
 // ── Главный компонент ─────────────────────────────────────────────────────────
@@ -258,10 +260,10 @@ export default function BeginnerPath({ onClose }) {
   const navigate = useNavigate()
   const { user, profile, setProfile } = useAuth()
   const [openSection,     setOpenSection]     = useState(null)
-  const [manualDone,      setManualDone]      = useState(loadProgress)
+  const [manualDone,      setManualDone]      = useState(() => loadProgress(user?.id))
   const alreadyCompleted = useMemo(() => {
     const auto = getAutoComplete()
-    const manual = loadProgress()
+    const manual = loadProgress(user?.id)
     return STEPS.every(st => {
       if (st.id === 'quiz')     return !!manual['quiz']
       if (!st.manual) return st.id === 'alphabet' ? auto.alphabet : auto.fatiha
@@ -298,7 +300,7 @@ function handleMarkDoneRequest(step) {
   function markDone(id) {
     const next = { ...manualDone, [id]: true }
     setManualDone(next)
-    saveProgress(next)
+    saveProgress(next, user?.id)
     // Шахада имеет особую награду +150 через onConfirm — не начисляем обычные +20
     if (!manualDone[id] && id !== 'shahada') addNurIfLevel(20, 'seeker', user, profile, setProfile)
     const allDone = STEPS.every(st => {
@@ -863,8 +865,9 @@ const fps = {
 
 // ── Виджет новичка (seeker) — главный экран ───────────────────────────────────
 export function BeginnerPathWidget({ onOpen }) {
+  const { user } = useAuth()
   const auto   = getAutoComplete()
-  const manual = loadProgress()
+  const manual = loadProgress(user?.id)
 
   function isDoneStep(st) {
     if (st.id === 'quiz')     return !!manual['quiz']
