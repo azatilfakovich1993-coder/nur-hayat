@@ -123,19 +123,19 @@ async function ne(n, e) {
   return new Response(i, r);
 }
 const ae = (n) => new URL(String(n), location.href).href.replace(new RegExp(`^${location.origin}`), "");
-function j(n, e) {
+function B(n, e) {
   const t = new URL(n);
   for (const s of e)
     t.searchParams.delete(s);
   return t.href;
 }
 async function re(n, e, t, s) {
-  const a = j(e.url, t);
+  const a = B(e.url, t);
   if (e.url === a)
     return n.match(e, s);
   const r = Object.assign(Object.assign({}, s), { ignoreSearch: !0 }), i = await n.keys(e, r);
   for (const c of i) {
-    const o = j(c.url, t);
+    const o = B(c.url, t);
     if (a === o)
       return n.match(c, s);
   }
@@ -473,7 +473,7 @@ class he {
     return s || t && t.status !== 200 && (t = void 0), t;
   }
 }
-class v {
+class M {
   /**
    * Creates a new instance of the strategy and sets all documented option
    * properties as public instance properties.
@@ -595,7 +595,7 @@ class v {
       throw i;
   }
 }
-class p extends v {
+class p extends M {
   /**
    *
    * @param {Object} [options]
@@ -894,7 +894,7 @@ This is generally NOT safe. Learn more at https://bit.ly/wb-precache`;
   }
 }
 let L;
-const M = () => (L || (L = new le()), L);
+const v = () => (L || (L = new le()), L);
 try {
   self["workbox:routing:7.3.0"] && _();
 } catch {
@@ -1205,7 +1205,7 @@ class ge extends m {
   }
 }
 function we(n) {
-  const e = M(), t = new ge(e, n);
+  const e = v(), t = new ge(e, n);
   g(t);
 }
 const ye = "-precache-", _e = async (n, e = ye) => {
@@ -1220,10 +1220,10 @@ function Re() {
   });
 }
 function be(n) {
-  return M().createHandlerBoundToURL(n);
+  return v().createHandlerBoundToURL(n);
 }
 function Ce(n) {
-  M().precache(n);
+  v().precache(n);
 }
 function xe(n, e) {
   Ce(n), we(e);
@@ -1286,7 +1286,7 @@ class De extends m {
     return !!this._allowlist.some((a) => a.test(s));
   }
 }
-class S extends v {
+class S extends M {
   /**
    * @private
    * @param {Request|string} request A request to run this strategy for.
@@ -1320,7 +1320,7 @@ const Le = {
    */
   cacheWillUpdate: async ({ response: n }) => n.status === 200 || n.status === 0 ? n : null
 };
-class Ue extends v {
+class Ue extends M {
   /**
    * @param {Object} [options]
    * @param {string} [options.cacheName] Cache name to store and retrieve
@@ -1415,9 +1415,9 @@ class Ue extends v {
   }
 }
 const ke = (n, e) => e.some((t) => n instanceof t);
-let B, W;
+let W, j;
 function Pe() {
-  return B || (B = [
+  return W || (W = [
     IDBDatabase,
     IDBObjectStore,
     IDBIndex,
@@ -1426,7 +1426,7 @@ function Pe() {
   ]);
 }
 function Ne() {
-  return W || (W = [
+  return j || (j = [
     IDBCursor.prototype.advance,
     IDBCursor.prototype.continue,
     IDBCursor.prototype.continuePrimaryKey
@@ -1449,7 +1449,7 @@ function Ie(n) {
   }).catch(() => {
   }), A.set(e, n), e;
 }
-function ve(n) {
+function Me(n) {
   if (N.has(n))
     return;
   const e = new Promise((t, s) => {
@@ -1483,7 +1483,7 @@ let I = {
     return n instanceof IDBTransaction && (e === "done" || e === "store") ? !0 : e in n;
   }
 };
-function Me(n) {
+function ve(n) {
   I = n(I);
 }
 function Se(n) {
@@ -1497,7 +1497,7 @@ function Se(n) {
   };
 }
 function Ae(n) {
-  return typeof n == "function" ? Se(n) : (n instanceof IDBTransaction && ve(n), ke(n, Pe()) ? new Proxy(n, I) : n);
+  return typeof n == "function" ? Se(n) : (n instanceof IDBTransaction && Me(n), ke(n, Pe()) ? new Proxy(n, I) : n);
 }
 function f(n) {
   if (n instanceof IDBRequest)
@@ -1531,16 +1531,16 @@ function Oe(n, { blocked: e } = {}) {
   )), f(t).then(() => {
   });
 }
-const je = ["get", "getKey", "getAll", "getAllKeys", "count"], Be = ["put", "add", "delete", "clear"], P = /* @__PURE__ */ new Map();
-function q(n, e) {
+const Be = ["get", "getKey", "getAll", "getAllKeys", "count"], We = ["put", "add", "delete", "clear"], P = /* @__PURE__ */ new Map();
+function F(n, e) {
   if (!(n instanceof IDBDatabase && !(e in n) && typeof e == "string"))
     return;
   if (P.get(e))
     return P.get(e);
-  const t = e.replace(/FromIndex$/, ""), s = e !== t, a = Be.includes(t);
+  const t = e.replace(/FromIndex$/, ""), s = e !== t, a = We.includes(t);
   if (
     // Bail if the target doesn't exist on the target. Eg, getAll isn't in Edge.
-    !(t in (s ? IDBIndex : IDBObjectStore).prototype) || !(a || je.includes(t))
+    !(t in (s ? IDBIndex : IDBObjectStore).prototype) || !(a || Be.includes(t))
   )
     return;
   const r = async function(i, ...c) {
@@ -1553,20 +1553,20 @@ function q(n, e) {
   };
   return P.set(e, r), r;
 }
-Me((n) => ({
+ve((n) => ({
   ...n,
-  get: (e, t, s) => q(e, t) || n.get(e, t, s),
-  has: (e, t) => !!q(e, t) || n.has(e, t)
+  get: (e, t, s) => F(e, t) || n.get(e, t, s),
+  has: (e, t) => !!F(e, t) || n.has(e, t)
 }));
 try {
   self["workbox:expiration:7.3.0"] && _();
 } catch {
 }
-const We = "workbox-expiration", b = "cache-entries", F = (n) => {
+const je = "workbox-expiration", b = "cache-entries", q = (n) => {
   const e = new URL(n, location.href);
   return e.hash = "", e.href;
 };
-class qe {
+class Fe {
   /**
    *
    * @param {string} cacheName
@@ -1604,7 +1604,7 @@ class qe {
    * @private
    */
   async setTimestamp(e, t) {
-    e = F(e);
+    e = q(e);
     const s = {
       url: e,
       timestamp: t,
@@ -1664,7 +1664,7 @@ class qe {
    * @private
    */
   _getId(e) {
-    return this._cacheName + "|" + F(e);
+    return this._cacheName + "|" + q(e);
   }
   /**
    * Returns an open connection to the database.
@@ -1672,12 +1672,12 @@ class qe {
    * @private
    */
   async getDb() {
-    return this._db || (this._db = await Ke(We, 1, {
+    return this._db || (this._db = await Ke(je, 1, {
       upgrade: this._upgradeDbAndDeleteOldDbs.bind(this)
     })), this._db;
   }
 }
-class Fe {
+class qe {
   /**
    * To construct a new CacheExpiration instance you must provide at least
    * one of the `config` properties.
@@ -1692,7 +1692,7 @@ class Fe {
    * that will be used when calling `delete()` on the cache.
    */
   constructor(e, t = {}) {
-    this._isRunning = !1, this._rerunRequested = !1, this._maxEntries = t.maxEntries, this._maxAgeSeconds = t.maxAgeSeconds, this._matchOptions = t.matchOptions, this._cacheName = e, this._timestampModel = new qe(e);
+    this._isRunning = !1, this._rerunRequested = !1, this._maxEntries = t.maxEntries, this._maxAgeSeconds = t.maxAgeSeconds, this._matchOptions = t.matchOptions, this._cacheName = e, this._timestampModel = new Fe(e);
   }
   /**
    * Expires entries for the given cache and given criteria.
@@ -1787,7 +1787,7 @@ class T {
     if (e === C.getRuntimeName())
       throw new l("expire-custom-caches-only");
     let t = this._cacheExpirations.get(e);
-    return t || (t = new Fe(e, this._config), this._cacheExpirations.set(e, t)), t;
+    return t || (t = new qe(e, this._config), this._cacheExpirations.set(e, t)), t;
   }
   /**
    * @param {Response} cachedResponse
@@ -1843,7 +1843,7 @@ class T {
 }
 self.skipWaiting();
 Te();
-xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"568fe5045caa59570b522ee0a841e6c5","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-WXBGjwCl.js"},{"revision":null,"url":"assets/web-DHLng4nw.js"},{"revision":null,"url":"assets/web-COLzG4il.js"},{"revision":null,"url":"assets/web-BmGO-08Z.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-CC95tW5H.js"},{"revision":null,"url":"assets/nur-Bp9zvj8z.js"},{"revision":null,"url":"assets/index-Bhyr5Cvi.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/fetchVerse-Cmkj1q7Y.js"},{"revision":null,"url":"assets/SuraPage-Cq5Abrnj.js"},{"revision":null,"url":"assets/SplashPage-DB3GD0Ok.js"},{"revision":null,"url":"assets/QuranPage-CP91oIsc.js"},{"revision":null,"url":"assets/ProfilePage-BRlY1WxK.js"},{"revision":null,"url":"assets/PrayerPage-DTH1zi0s.js"},{"revision":null,"url":"assets/OnboardingPage-C9_-hiPS.js"},{"revision":null,"url":"assets/LearnPage-KlGBmA0-.js"},{"revision":null,"url":"assets/HomePage-CfDwn28v.js"},{"revision":null,"url":"assets/ChatPage-C0vawKwV.js"},{"revision":null,"url":"assets/BeginnerPath-DhtHsLTs.js"},{"revision":null,"url":"assets/AuthPage-Zqv1guzy.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
+xe([{"revision":"c3f019b9b1d9cd2303550003707bb215","url":"registerSW.js"},{"revision":"5e3294ef9e2d077546806f2907289382","url":"index.html"},{"revision":"284019518eb22509cf22e7d0754951bf","url":"favicon.ico"},{"revision":"73ded9365c289a6d4148a60d7f31b524","url":"404.html"},{"revision":"6d7ff7bf9beb801efbafc2fcd708286c","url":"icons/icon.svg"},{"revision":null,"url":"assets/web-_utrTovF.js"},{"revision":null,"url":"assets/web-QiqiWIOa.js"},{"revision":null,"url":"assets/web-CwDdhpG-.js"},{"revision":null,"url":"assets/web-BFUcpXEg.js"},{"revision":null,"url":"assets/suras-C2qcbJtu.js"},{"revision":null,"url":"assets/surahs-learn-Cp_255qL.js"},{"revision":null,"url":"assets/nur-BogGRiFb.js"},{"revision":null,"url":"assets/index-B7QK82aY.js"},{"revision":null,"url":"assets/index-B5dTH09l.css"},{"revision":null,"url":"assets/fetchVerse-BLm34ogR.js"},{"revision":null,"url":"assets/SuraPage-d9lgH2Q-.js"},{"revision":null,"url":"assets/SplashPage-DVFgBROc.js"},{"revision":null,"url":"assets/QuranPage-YhzZZY-N.js"},{"revision":null,"url":"assets/ProfilePage-BkGlUIeV.js"},{"revision":null,"url":"assets/PrayerPage-DO9Xgf0e.js"},{"revision":null,"url":"assets/OnboardingPage-DtPFaKc0.js"},{"revision":null,"url":"assets/LearnPage-DDhd65Ax.js"},{"revision":null,"url":"assets/HomePage-BXTh83UV.js"},{"revision":null,"url":"assets/ChatPage-DvzvkTMD.js"},{"revision":null,"url":"assets/BeginnerPath-BoTTVp_m.js"},{"revision":null,"url":"assets/AuthPage-D-e80SUG.js"},{"revision":"c4319b2a329f7cb9e93ac0601f990ee6","url":"icons/icon-192.png"},{"revision":"e8c00ee3fda2ed6af3211a792598c12e","url":"icons/icon-512.png"},{"revision":"34014fe31c87e91ad0d549d86120b77e","url":"manifest.webmanifest"}]);
 Re();
 g(
   new De(be("index.html"))
@@ -1857,7 +1857,7 @@ g(
   "GET"
 );
 g(
-  /^https:\/\/qnkgvsxjxjfmjopnzmdu\.supabase\.co\/functions\/v1\/audio-proxy\?.*/i,
+  /\/functions\/v1\/audio-proxy\?.*/i,
   new S({
     cacheName: "quran-audio-cache",
     plugins: [new T({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 })]
