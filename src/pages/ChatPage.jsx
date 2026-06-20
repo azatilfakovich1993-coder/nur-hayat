@@ -140,6 +140,8 @@ const ROOMS = [
   { id: 'sisters',   label: 'Спросить женщин', icon: '👩', desc: 'Вопрос только для женщин — отвечают женщины', genderOnly: 'female' },
 ]
 
+const MAX_MSG_LEN = 2000
+
 function formatTime(ts) {
   return new Date(ts).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' })
 }
@@ -263,6 +265,9 @@ export default function ChatPage() {
   const inputRef         = useRef()
   const messagesRef      = useRef()   // scroll container
   const scrollAnchorRef  = useRef(null) // savedHeight перед prepend
+  const isNearBottomRef  = useRef(true) // юзер сейчас у низа чата или читает историю выше
+  const lastMsgIdRef     = useRef(null) // id последнего сообщения на прошлом рендере
+  const msgsSignatureRef = useRef('')   // подпись текущих сообщений — чтобы не дёргать setMessages, если с сервера пришло то же самое
   const fileRef     = useRef()
   const msgRefs     = useRef({})  // id -> DOM element
   const mediaRef    = useRef(null)
@@ -308,8 +313,15 @@ export default function ChatPage() {
         return
       }
 
-      setMessages(msgs)
-      if (msgs.length > 0) setCachedMessages(room, msgs)
+      // Сравниваем с тем, что уже на экране — если ничего не изменилось,
+      // не вызываем setMessages: иначе каждые 5 сек (опрос) список "обновляется"
+      // без причины и дёргает скролл/анимации, даже когда новых сообщений нет.
+      const signature = JSON.stringify(msgs.map(m => [m.id, m.content, m.reactions, m.file_url]))
+      if (signature !== msgsSignatureRef.current) {
+        msgsSignatureRef.current = signature
+        setMessages(msgs)
+        if (msgs.length > 0) setCachedMessages(room, msgs)
+      }
       setHasMore((data?.length || 0) >= 40)
       setLoading(false)
       setLoadError(false)
@@ -395,7 +407,10 @@ export default function ChatPage() {
     }
   }, [room, user?.id, reloadKey])
 
-  // Скролл вниз при новых сообщениях / восстановление позиции при подгрузке старых
+  // Скролл вниз — только когда реально появилось новое последнее сообщение,
+  // и только если юзер уже был у низа чата (или это его собственное сообщение).
+  // Раньше скроллило при ЛЮБОМ изменении messages (включая опрос раз в 5 сек
+  // без новых сообщений) — это уезжало вниз прямо во время чтения истории.
   useEffect(() => {
     if (scrollAnchorRef.current !== null) {
       // Восстанавливаем позицию после prepend старых сообщений
@@ -406,7 +421,14 @@ export default function ChatPage() {
       scrollAnchorRef.current = null
       return
     }
-    if (!highlightId) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const last = messages[messages.length - 1]
+    const isNewLast = last && last.id !== lastMsgIdRef.current
+    lastMsgIdRef.current = last?.id ?? null
+    if (!isNewLast || highlightId) return
+    const isMine = last.user_id === user?.id
+    if (isMine || isNearBottomRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
   }, [messages])
 
   // Подгрузка старых сообщений при скролле вверх
@@ -441,6 +463,8 @@ export default function ChatPage() {
 
   function handleMessagesScroll(e) {
     if (e.target.scrollTop < 60 && hasMore && !loadingMore) loadMore()
+    const { scrollTop, scrollHeight, clientHeight } = e.target
+    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 150
   }
 
   // Подсветка сообщения из URL-параметра ?highlight=ID
@@ -457,11 +481,22 @@ export default function ChatPage() {
     setTimeout(() => setHighlightId(null), 3500)
   }, [loading, location.search])
 
+  // Переход к оригиналу при тапе на цитату ответа (если оригинал ещё загружен на экране)
+  function jumpToMessage(id) {
+    if (!id) return
+    const el = msgRefs.current[id]
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    setHighlightId(String(id))
+    setTimeout(() => setHighlightId(null), 3500)
+  }
+
   // ── Отправка текста ──
   async function sendMessage() {
     const content = text.trim()
     if (!content || sending || !user) return
     setText('')
+    if (inputRef.current) inputRef.current.style.height = 'auto'
 
     // Оптимистичное сообщение — показываем сразу со статусом pending
     const tempId = 'pending-' + Date.now()
@@ -620,6 +655,15 @@ export default function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
   }
 
+  function onTextChange(e) {
+    const val = e.target.value.slice(0, MAX_MSG_LEN)
+    setText(val)
+    // Авто-расширение высоты по контенту, с потолком — дальше внутренний скролл
+    const el = e.target
+    el.style.height = 'auto'
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px'
+  }
+
   async function deleteMessage(id) {
     setMessages(prev => prev.filter(m => m.id !== id))
     setMenuMsg(null)
@@ -661,10 +705,10 @@ export default function ChatPage() {
 
   function insertEmoji(emoji) {
     const el = inputRef.current
-    if (!el) { setText(t => t + emoji); return }
+    if (!el) { setText(t => (t + emoji).slice(0, MAX_MSG_LEN)); return }
     const start = el.selectionStart
     const end   = el.selectionEnd
-    const next  = text.slice(0, start) + emoji + text.slice(end)
+    const next  = (text.slice(0, start) + emoji + text.slice(end)).slice(0, MAX_MSG_LEN)
     setText(next)
     // Восстанавливаем позицию курсора
     setTimeout(() => {
@@ -789,6 +833,8 @@ export default function ChatPage() {
                     onDelete={deleteMessage}
                     onReaction={toggleReaction}
                     onRetry={retryMessage}
+                    replyToTime={msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id)?.created_at : null}
+                    onJumpToReply={jumpToMessage}
                   />
                 </div>
               )
@@ -864,9 +910,14 @@ export default function ChatPage() {
               {/* Текст */}
               <div style={s.inputWrap}>
                 <textarea ref={inputRef} style={s.input} value={text}
-                  onChange={e => setText(e.target.value)} onKeyDown={onKeyDown}
+                  onChange={onTextChange} onKeyDown={onKeyDown}
                   placeholder={`Написать в ${currentRoom.label}...`}
-                  rows={1} maxLength={500} />
+                  rows={1} maxLength={MAX_MSG_LEN} />
+                {text.length > MAX_MSG_LEN - 200 && (
+                  <div style={{ ...s.charCount, color: text.length >= MAX_MSG_LEN ? '#ff5f5f' : 'var(--text-muted)' }}>
+                    {text.length}/{MAX_MSG_LEN}
+                  </div>
+                )}
               </div>
 
               {/* Отправить / Микрофон */}
@@ -963,7 +1014,7 @@ function Avatar({ src, letter, style }) {
   )
 }
 
-function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry }) {
+function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry, replyToTime, onJumpToReply }) {
   const letter  = msg.user_name?.charAt(0).toUpperCase() || '?'
   // Если профиль загружен (avatarSrcOverride !== undefined) — используем только его значение.
   // Это гарантирует что удалённый аватар не показывается из старых сообщений.
@@ -971,6 +1022,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
   const [playing, setPlaying] = useState(false)
   const audioRef = useRef()
   const pressTimer = useRef(null)
+  const pressStartXY = useRef({ x: 0, y: 0 })
 
   const emojiOnly = !msg.file_type && isEmojiOnly(msg.content)
   const lvl = msg.user_level ? LEVEL_BADGES[msg.user_level] : null
@@ -984,7 +1036,17 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
   }
 
   function handlePressStart(e) {
+    const t = e.touches?.[0]
+    pressStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 }
     pressTimer.current = setTimeout(() => onMenu(), 500)
+  }
+  function handlePressMove(e) {
+    // Палец сдвинулся — это скролл/свайп, а не долгое нажатие. Отменяем меню.
+    const t = e.touches?.[0]
+    if (!t) return
+    const dx = Math.abs(t.clientX - pressStartXY.current.x)
+    const dy = Math.abs(t.clientY - pressStartXY.current.y)
+    if (dx > 10 || dy > 10) clearTimeout(pressTimer.current)
   }
   function handlePressEnd() {
     clearTimeout(pressTimer.current)
@@ -994,8 +1056,16 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
     <>
       {/* Цитата ответа */}
       {msg.reply_to_id && (
-        <div style={{ ...b.replyQuote, borderColor: isMe ? 'rgba(7,7,16,.3)' : 'rgba(201,168,76,.4)', background: isMe ? 'rgba(7,7,16,.15)' : 'rgba(201,168,76,.07)' }}>
-          <div style={{ ...b.replyQuoteName, color: isMe ? 'rgba(7,7,16,.7)' : 'var(--gold)' }}>{msg.reply_to_name}</div>
+        <div
+          style={{ ...b.replyQuote, borderColor: isMe ? 'rgba(7,7,16,.3)' : 'rgba(201,168,76,.4)', background: isMe ? 'rgba(7,7,16,.15)' : 'rgba(201,168,76,.07)' }}
+          onClick={e => { e.stopPropagation(); onJumpToReply?.(msg.reply_to_id) }}
+        >
+          <div style={{ display:'flex', alignItems:'baseline', justifyContent:'space-between', gap:8 }}>
+            <div style={{ ...b.replyQuoteName, color: isMe ? 'rgba(7,7,16,.7)' : 'var(--gold)' }}>{msg.reply_to_name}</div>
+            {replyToTime && (
+              <div style={{ fontSize:10, flexShrink:0, color: isMe ? 'rgba(7,7,16,.5)' : 'var(--text-dim)' }}>{formatTime(replyToTime)}</div>
+            )}
+          </div>
           <div style={{ ...b.replyQuoteText, color: isMe ? 'rgba(7,7,16,.6)' : 'var(--text-muted)' }}>{(msg.reply_to_text || '').slice(0, 80)}</div>
         </div>
       )}
@@ -1056,7 +1126,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
           )}
           <div
             style={{ display:'flex', gap:4, padding:'4px 8px', cursor:'pointer', opacity: msg.failed ? 0.6 : 1 }}
-            onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
+            onTouchStart={handlePressStart} onTouchMove={handlePressMove} onTouchEnd={handlePressEnd}
             onContextMenu={e => { e.preventDefault(); onMenu() }}
             onClick={() => { if (msg.failed) onRetry?.(msg) }}
           >
@@ -1195,7 +1265,7 @@ function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onClose }) {
       <div style={sh.sheet}>
         {/* Превью сообщения */}
         <div style={sh.preview}>
-          <div style={sh.previewText} className="arabic">
+          <div style={sh.previewText}>
             {msg.content ? msg.content.slice(0, 80) + (msg.content.length > 80 ? '…' : '') : '📎 Медиа'}
           </div>
         </div>
@@ -1310,10 +1380,12 @@ const s = {
   attachBtn: { width:40, height:40, borderRadius:'50%', background:'var(--bg-card)',
     border:'1px solid var(--border)', fontSize:18, cursor:'pointer', flexShrink:0,
     display:'flex', alignItems:'center', justifyContent:'center' },
-  inputWrap: { flex:1 },
+  inputWrap: { flex:1, position:'relative' },
   input: { width:'100%', background:'var(--bg-card)', border:'1px solid var(--border)',
     borderRadius:20, color:'var(--text)', fontFamily:'var(--font-ui)', fontSize:15,
-    padding:'11px 16px', outline:'none', resize:'none', lineHeight:1.4, display:'block' },
+    padding:'11px 16px', outline:'none', resize:'none', lineHeight:1.4, display:'block',
+    maxHeight:120, overflowY:'auto' },
+  charCount: { position:'absolute', right:14, bottom:-16, fontSize:11, fontFamily:'var(--font-ui)' },
   sendBtn: { width:44, height:44, borderRadius:'50%', flexShrink:0,
     background:'linear-gradient(135deg,#C9A84C,#F0D080)', color:'#070710',
     border:'none', cursor:'pointer', fontSize:18, fontWeight:700,
@@ -1373,7 +1445,7 @@ const b = {
   replyQuote: {
     borderLeft:'3px solid', borderRadius:6, padding:'5px 8px',
     marginBottom:7, display:'flex', flexDirection:'column', gap:2,
-    direction:'ltr', unicodeBidi:'embed',
+    direction:'ltr', unicodeBidi:'embed', cursor:'pointer',
   },
   replyQuoteName: { fontSize:11, fontWeight:700, direction:'ltr' },
   replyQuoteText: { fontSize:12, lineHeight:1.4, overflow:'hidden',

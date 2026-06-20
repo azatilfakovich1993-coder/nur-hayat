@@ -1042,22 +1042,23 @@ export default function PrayerPage() {
     return () => clearInterval(id)
   }, [])
 
+  function loadManual() {
+    if (!savedCity) { setLoading(false); return }
+    setLoading(true); setError(null)
+    fetchTimings(savedCity.lat, savedCity.lon, method, school, fajrAngle, ishaAngle)
+      .then(data => {
+        setTimings(data.timings)
+        setHijri(data.date.hijri)
+        setLocation({ lat: savedCity.lat, lon: savedCity.lon, city: savedCity.name, country: '' })
+      })
+      .catch(() => setError('api_error'))
+      .finally(() => setLoading(false))
+  }
+
   // Загрузка при смене режима, города или настроек расчёта
   useEffect(() => {
-    if (mode === 'manual') {
-      if (!savedCity) { setLoading(false); return }
-      setLoading(true); setError(null)
-      fetchTimings(savedCity.lat, savedCity.lon, method, school, fajrAngle, ishaAngle)
-        .then(data => {
-          setTimings(data.timings)
-          setHijri(data.date.hijri)
-          setLocation({ lat: savedCity.lat, lon: savedCity.lon, city: savedCity.name, country: '' })
-        })
-        .catch(() => setError('api_error'))
-        .finally(() => setLoading(false))
-    } else {
-      loadByGeo()
-    }
+    if (mode === 'manual') loadManual()
+    else loadByGeo()
   }, [mode, savedCity, method, school, fajrAngle, ishaAngle])
 
   function loadByGeo() {
@@ -1452,9 +1453,11 @@ export default function PrayerPage() {
             <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6 }}>
               Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.
             </div>
-            <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город вручную</button>
+            {mode !== 'manual' && (
+              <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город вручную</button>
+            )}
             <button style={{ ...s.enableBtn, background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', marginTop:0 }}
-              onClick={() => mode === 'auto' ? loadByGeo() : switchMode(mode)}>
+              onClick={() => mode === 'auto' ? loadByGeo() : loadManual()}>
               🔄 Попробовать снова
             </button>
           </div>
