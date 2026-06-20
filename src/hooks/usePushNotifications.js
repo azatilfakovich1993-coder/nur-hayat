@@ -43,6 +43,19 @@ export function usePushNotifications(user) {
         const swReg = await navigator.serviceWorker.ready
         console.log('[Push] SW ready:', swReg.scope)
 
+        const existingSub = await swReg.pushManager.getSubscription()
+        if (existingSub) {
+          const existingKey = existingSub.options?.applicationServerKey
+            ? btoa(String.fromCharCode(...new Uint8Array(existingSub.options.applicationServerKey)))
+            : null
+          const newKeyBytes = urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
+          const newKeyBase64 = btoa(String.fromCharCode(...newKeyBytes))
+          if (existingKey !== newKeyBase64) {
+            console.log('[Push] VAPID key changed, resubscribing')
+            await existingSub.unsubscribe()
+          }
+        }
+
         const subscription = await swReg.pushManager.subscribe({
           userVisibleOnly: true,
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
