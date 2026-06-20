@@ -5,8 +5,9 @@ import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 
 // Аудио — через Supabase audio-proxy (CDN islamic.network блокируется
-// у части провайдеров РФ без VPN, поэтому проксируем через сервер)
-const AUDIO_PROXY = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co/functions/v1/audio-proxy?url='
+// у части провайдеров РФ без VPN, поэтому проксируем через сервер).
+// Идём через nurhayat.ru — сам supabase.co тоже блокируется провайдерами
+const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-proxy?url=`
 const proxify = url => AUDIO_PROXY + encodeURIComponent(url)
 const CDN_VERSE = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy'
 const CDN_SURAH = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'

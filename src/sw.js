@@ -30,7 +30,7 @@ registerRoute(
 // блокируется у части провайдеров без VPN) — кэшируем навсегда: один раз
 // прослушанный аят больше не качаем заново
 registerRoute(
-  /^https:\/\/qnkgvsxjxjfmjopnzmdu\.supabase\.co\/functions\/v1\/audio-proxy\?.*/i,
+  /\/functions\/v1\/audio-proxy\?.*/i,
   new CacheFirst({
     cacheName: 'quran-audio-cache',
     plugins: [new ExpirationPlugin({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 })]

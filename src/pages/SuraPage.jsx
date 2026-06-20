@@ -74,8 +74,10 @@ function globalAyahNumber(suraId, ayatNum) {
 }
 
 // Аудио одного аята — через Supabase audio-proxy (CDN islamic.network
-// блокируется у части провайдеров РФ без VPN, поэтому проксируем через сервер)
-const AUDIO_PROXY = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co/functions/v1/audio-proxy?url='
+// блокируется у части провайдеров РФ без VPN, поэтому проксируем через сервер).
+// Идём через nurhayat.ru, а не напрямую на supabase.co — сам supabase.co
+// тоже блокируется провайдерами (см. cloudflare-worker/regru-proxy)
+const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-proxy?url=`
 function ayatAudioUrl(reciter, suraId, ayatNum) {
   const num = globalAyahNumber(suraId, ayatNum)
   const cdnUrl = `https://cdn.islamic.network/quran/audio/${reciter.bitrate}/${reciter.id}/${num}.mp3`
