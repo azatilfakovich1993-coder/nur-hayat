@@ -1,6 +1,8 @@
-// Аудио — напрямую с CDN islamic.network (без прокси через Supabase Edge Function)
+// Аудио — через Supabase audio-proxy (CDN islamic.network блокируется
+// у части провайдеров РФ без VPN, поэтому проксируем через сервер)
+const AUDIO_PROXY = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co/functions/v1/audio-proxy?url='
 const CDN = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
-const sa  = n => `${CDN}/${n}.mp3`
+const sa  = n => AUDIO_PROXY + encodeURIComponent(`${CDN}/${n}.mp3`)
 // Local letter audio (letter_2 = Alif ... letter_29 = Ya)
 const la  = n      => `/audio/letters/letter_${n}.mp3`
 

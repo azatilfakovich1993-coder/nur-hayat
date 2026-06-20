@@ -26,10 +26,11 @@ registerRoute(
   'GET'
 )
 
-// Аудио чтения Корана (cdn.islamic.network) — кэшируем навсегда: один раз
+// Аудио чтения Корана (через audio-proxy, т.к. cdn.islamic.network
+// блокируется у части провайдеров без VPN) — кэшируем навсегда: один раз
 // прослушанный аят больше не качаем заново
 registerRoute(
-  /^https:\/\/cdn\.islamic\.network\/quran\/audio(-surah)?\/.*/i,
+  /^https:\/\/qnkgvsxjxjfmjopnzmdu\.supabase\.co\/functions\/v1\/audio-proxy\?.*/i,
   new CacheFirst({
     cacheName: 'quran-audio-cache',
     plugins: [new ExpirationPlugin({ maxEntries: 300, maxAgeSeconds: 60 * 60 * 24 * 30 })]

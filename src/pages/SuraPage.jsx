@@ -73,11 +73,13 @@ function globalAyahNumber(suraId, ayatNum) {
   return (SURA_OFFSETS[suraId] || 0) + ayatNum
 }
 
-// Аудио одного аята с CDN islamic.network (Cloudflare, отдаёт CORS-заголовки,
-// доступен напрямую — в отличие от everyayah.com, который блокируется без VPN)
+// Аудио одного аята — через Supabase audio-proxy (CDN islamic.network
+// блокируется у части провайдеров РФ без VPN, поэтому проксируем через сервер)
+const AUDIO_PROXY = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co/functions/v1/audio-proxy?url='
 function ayatAudioUrl(reciter, suraId, ayatNum) {
   const num = globalAyahNumber(suraId, ayatNum)
-  return `https://cdn.islamic.network/quran/audio/${reciter.bitrate}/${reciter.id}/${num}.mp3`
+  const cdnUrl = `https://cdn.islamic.network/quran/audio/${reciter.bitrate}/${reciter.id}/${num}.mp3`
+  return AUDIO_PROXY + encodeURIComponent(cdnUrl)
 }
 
 function fmtTime(sec) {

@@ -4,8 +4,10 @@ import { SURAS } from '../data/suras'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 
-// Аудио — напрямую с CDN islamic.network (без прокси: один переход быстрее
-// и надёжнее, чем браузер → Supabase Edge Function (США) → everyayah.com)
+// Аудио — через Supabase audio-proxy (CDN islamic.network блокируется
+// у части провайдеров РФ без VPN, поэтому проксируем через сервер)
+const AUDIO_PROXY = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co/functions/v1/audio-proxy?url='
+const proxify = url => AUDIO_PROXY + encodeURIComponent(url)
 const CDN_VERSE = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy'
 const CDN_SURAH = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
 
@@ -21,15 +23,15 @@ function globalAyahNumber(suraId, ayatNum) {
 }
 
 function getVerseAudio(surah, verseN) {
-  if (surah.id === 'ayat-kursi') return `${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`
-  if (surah.surahNum) return `${CDN_VERSE}/${globalAyahNumber(surah.surahNum, verseN)}.mp3`
+  if (surah.id === 'ayat-kursi') return proxify(`${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`)
+  if (surah.surahNum) return proxify(`${CDN_VERSE}/${globalAyahNumber(surah.surahNum, verseN)}.mp3`)
   if (surah.audioUrl) return surah.audioUrl   // локальный файл для не-Коранических текстов
   return null
 }
 
 function getSurahAudio(surah) {
-  if (surah.id === 'ayat-kursi') return `${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`
-  if (surah.surahNum) return `${CDN_SURAH}/${surah.surahNum}.mp3`
+  if (surah.id === 'ayat-kursi') return proxify(`${CDN_VERSE}/${globalAyahNumber(2, 255)}.mp3`)
+  if (surah.surahNum) return proxify(`${CDN_SURAH}/${surah.surahNum}.mp3`)
   if (surah.audioUrl) return surah.audioUrl   // локальный файл
   return null
 }
