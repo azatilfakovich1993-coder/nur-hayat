@@ -243,15 +243,25 @@ function getAutoComplete() {
   return { alphabet: alphabetDone, fatiha: fatihaDone, surahProgress }
 }
 
+// Ключ всегда 'beginner_path' (без ID пользователя) — он должен совпадать
+// с PROGRESS_KEYS в useAuth.jsx, иначе прогресс никогда не попадёт в
+// синхронизацию с сервером и пропадёт при переустановке/смене устройства.
+// Смену пользователя на одном устройстве уже обрабатывает clearProgress()
+// в useAuth.jsx, так что доп. префикс тут не нужен.
 function loadProgress(userId) {
-  const key = userId ? `beginner_path_${userId}` : 'beginner_path'
-  try { return JSON.parse(localStorage.getItem(key) || '{}') }
+  // Миграция: раньше прогресс хранился под beginner_path_<userId> и никогда
+  // не синхронизировался с сервером (ключ не совпадал с PROGRESS_KEYS).
+  // Переносим один раз на правильный ключ, чтобы не потерять реальный прогресс.
+  if (userId && localStorage.getItem('beginner_path') === null) {
+    const legacy = localStorage.getItem(`beginner_path_${userId}`)
+    if (legacy) localStorage.setItem('beginner_path', legacy)
+  }
+  try { return JSON.parse(localStorage.getItem('beginner_path') || '{}') }
   catch { return {} }
 }
 
-function saveProgress(p, userId) {
-  const key = userId ? `beginner_path_${userId}` : 'beginner_path'
-  localStorage.setItem(key, JSON.stringify(p))
+function saveProgress(p) {
+  localStorage.setItem('beginner_path', JSON.stringify(p))
 }
 
 // ── Главный компонент ─────────────────────────────────────────────────────────
@@ -300,7 +310,7 @@ function handleMarkDoneRequest(step) {
   function markDone(id) {
     const next = { ...manualDone, [id]: true }
     setManualDone(next)
-    saveProgress(next, user?.id)
+    saveProgress(next)
     // Шахада имеет особую награду +150 через onConfirm — не начисляем обычные +20
     if (!manualDone[id] && id !== 'shahada') addNurIfLevel(20, 'seeker', user, profile, setProfile)
     const allDone = STEPS.every(st => {
