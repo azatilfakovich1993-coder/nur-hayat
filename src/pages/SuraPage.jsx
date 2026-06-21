@@ -5,6 +5,7 @@ import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../supabase/client'
 import { fetchSura } from '../utils/fetchVerse'
 import { addNur } from '../utils/nur'
+import { rewardFeedback } from '../utils/feedback'
 
 const BISMILLAH = 'بِسْمِ اللَّهِ الرَّحْمَٰنِ الرَّحِيمِ'
 const BISMILLAH_TRANSLIT_EN = 'Bismillāhi r-raḥmāni r-raḥīm'
@@ -299,6 +300,23 @@ export default function SuraPage() {
     return () => observer.disconnect()
   }, [verses.length, sura?.id])
 
+  // Подгружаем реально лайкнутые аяты этой суры из БД. Раньше состояние
+  // читалось из profile.liked_verses_keys — поля, которое нигде в коде не
+  // записывается, поэтому список лайков всегда был пустым при открытии,
+  // хотя сами лайки исправно сохранялись в таблицу liked_verses.
+  useEffect(() => {
+    if (!user || !sura) return
+    let cancelled = false
+    supabase.from('liked_verses').select('verse_key')
+      .eq('user_id', user.id)
+      .like('verse_key', `${sura.id}:%`)
+      .then(({ data }) => {
+        if (cancelled || !data) return
+        setLiked(new Set(data.map(r => r.verse_key)))
+      })
+    return () => { cancelled = true }
+  }, [user?.id, sura?.id])
+
   // Авто-прокрутка к читаемому аяту
   useEffect(() => {
     if (!playingVerse) return
@@ -306,6 +324,7 @@ export default function SuraPage() {
   }, [playingVerse])
 
   async function toggleLike(key) {
+    rewardFeedback()
     if (liked.has(key)) {
       // Снять галочку — вычесть 10 нур
       const next = new Set(liked); next.delete(key)
