@@ -7,6 +7,7 @@ import { HADITHS } from '../data/hadiths'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { addNur, addNurIfLevel, claimDailyLogin } from '../utils/nur'
 import { localDateStr } from '../utils/date'
+import { withRetry } from '../utils/network'
 import Adhkar from '../components/Adhkar'
 import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget } from '../components/BeginnerPath'
 
@@ -170,12 +171,12 @@ export default function HomePage() {
     since.setDate(now.getDate() - 60)
     const sinceStr = localDateStr(since)
 
-    Promise.race([
-      supabase.from('prayer_logs').select('prayer, date')
+    withRetry(
+      () => supabase.from('prayer_logs').select('prayer, date')
         .eq('user_id', user.id)
         .gte('date', sinceStr),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
-    ])
+      { attempts: 3, timeoutMs: 10000 },
+    )
       .then(({ data, error }) => {
         if (error) throw error
         if (!data) return

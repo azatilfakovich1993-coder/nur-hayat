@@ -2,15 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../hooks/useAuth'
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ])
-}
-function sleep(ms) {
-  return new Promise(r => setTimeout(r, ms))
-}
+import { withTimeout, sleep } from '../utils/network'
 import RegisterStep1 from '../components/auth/RegisterStep1'
 import RegisterStep3Gender from '../components/auth/RegisterStep3Gender'
 import RegisterStep3 from '../components/auth/RegisterStep3'
@@ -40,7 +32,7 @@ export default function AuthPage() {
         if (attempt > 1) setStatus(`Повтор ${attempt} из 3…`)
         const { error: e } = await withTimeout(
           supabase.auth.signInWithPassword(creds),
-          20000,
+          25000,
         )
         if (!e) { navigate('/home'); return }
         const msg = e.message || ''
@@ -82,11 +74,25 @@ export default function AuthPage() {
           password: full.password,
           options:  { data: { name: full.name } }
         }),
-        20000,
+        28000,
       )
       if (signUpErr) {
-        // Если email уже занят — аккаунт был создан раньше (таймаут), переключаем на вход
+        // Email уже занят — значит первая попытка уже создала аккаунт на сервере
+        // (просто клиент не дождался ответа из-за медленной сети/VPN и показал
+        // таймаут). Раньше тут просто переключали на вкладку "Войти" и ничего
+        // не делали — а если пользователь после этого тыкал обратно на
+        // "Создать аккаунт", все шаги регистрации (включая имя) сбрасывались
+        // заново. Вместо этого — сразу логиним этими же данными.
         if (signUpErr.message?.includes('already registered') || signUpErr.message?.includes('already been registered')) {
+          setStatus('Аккаунт уже создан, входим...')
+          try {
+            const { error: loginErr } = await withTimeout(
+              supabase.auth.signInWithPassword({ email: full.email, password: full.password }),
+              20000,
+            )
+            if (!loginErr) { navigate('/onboarding'); return }
+          } catch {}
+          // Авто-вход не удался (например, пароль изменился) — просим войти вручную
           setEmail(full.email)
           setPass(full.password)
           setTab('login')
@@ -112,7 +118,7 @@ export default function AuthPage() {
           streak:         1,
           onboarded:      false
         }).select().single(),
-        20000,
+        28000,
       )
       if (profileErr) { setError('Ошибка сохранения профиля'); return }
       setProfile(newProfile)

@@ -339,12 +339,24 @@ export default function ChatPage() {
       }
     }
 
-    pullMessages().catch((err) => {
-      if (cancelled) return
-      setLoading(false)
-      setLastErrMsg(err?.message || String(err))
-      if (!cached?.length) setLoadError(true)
-    })
+    // Под VPN/плохой сетью первая попытка иногда ловит таймаут, хотя само
+    // соединение в порядке — раньше это сразу показывало полноэкранную
+    // ошибку "сервер не отвечает". Теперь сначала тихо пробуем ещё пару раз
+    // с нарастающей паузой, и только если совсем не выходит — показываем ошибку.
+    function attemptLoad(attempt) {
+      pullMessages().catch((err) => {
+        if (cancelled) return
+        setLastErrMsg(err?.message || String(err))
+        if (attempt < 3) {
+          setRetryAttempt(attempt)
+          autoRetryRef.current = setTimeout(() => attemptLoad(attempt + 1), 1500 * attempt)
+        } else {
+          setLoading(false)
+          if (!cached?.length) setLoadError(true)
+        }
+      })
+    }
+    attemptLoad(1)
 
     // Онлайн-счётчик: своя отметка "я тут" + подсчёт тех, кто отметился недавно
     async function updatePresence() {
@@ -403,6 +415,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true
       clearInterval(poll)
+      if (autoRetryRef.current) clearTimeout(autoRetryRef.current)
       supabase.removeChannel(channel)
     }
   }, [room, user?.id, reloadKey])

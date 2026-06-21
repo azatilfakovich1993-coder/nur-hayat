@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, createContext, useContext } from 'react'
 import { supabase } from '../supabase/client'
+import { withTimeout, withRetry } from '../utils/network'
 
 const AuthContext = createContext(null)
 const AUTH_KEY = 'nur-hayat-auth'
@@ -19,13 +20,6 @@ const PROGRESS_KEYS = [
   'prayer_mode',
   'beginner_path_celebrated',
 ]
-
-function withTimeout(promise, ms) {
-  return Promise.race([
-    promise,
-    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
-  ])
-}
 
 function readStoredUser() {
   try {
@@ -183,9 +177,9 @@ export function AuthProvider({ children }) {
     profileLoadRef.current = userId
 
     try {
-      const { data, error } = await withTimeout(
-        supabase.from('profiles').select('*').eq('id', userId).single(),
-        8000,
+      const { data, error } = await withRetry(
+        () => supabase.from('profiles').select('*').eq('id', userId).single(),
+        { attempts: 3, timeoutMs: 12000 },
       )
 
       if (data) {
@@ -197,9 +191,9 @@ export function AuthProvider({ children }) {
       if (error?.code !== 'PGRST116') return
 
       await new Promise(r => setTimeout(r, 1200))
-      const { data: retried } = await withTimeout(
-        supabase.from('profiles').select('*').eq('id', userId).single(),
-        8000,
+      const { data: retried } = await withRetry(
+        () => supabase.from('profiles').select('*').eq('id', userId).single(),
+        { attempts: 2, timeoutMs: 12000 },
       )
       if (retried) {
         setProfile(retried)
@@ -208,8 +202,8 @@ export function AuthProvider({ children }) {
       }
 
       const u = userRef.current
-      const { data: created } = await withTimeout(
-        supabase.from('profiles').insert({
+      const { data: created } = await withRetry(
+        () => supabase.from('profiles').insert({
           id:             userId,
           name:           u?.user_metadata?.name || '',
           email:          u?.email || '',
@@ -220,7 +214,7 @@ export function AuthProvider({ children }) {
           streak:         1,
           onboarded:      false,
         }).select().single(),
-        8000,
+        { attempts: 2, timeoutMs: 12000 },
       )
       if (created) setProfile(created)
     } catch {
@@ -235,9 +229,9 @@ export function AuthProvider({ children }) {
     if (!uid) return
     const progress = collectProgress()
     try {
-      await withTimeout(
-        supabase.from('profiles').update({ progress }).eq('id', uid),
-        5000,
+      await withRetry(
+        () => supabase.from('profiles').update({ progress }).eq('id', uid),
+        { attempts: 2, timeoutMs: 10000 },
       )
     } catch {}
   }
@@ -245,9 +239,9 @@ export function AuthProvider({ children }) {
   const refreshProfile = async () => {
     if (!userRef.current) return
     try {
-      const { data } = await withTimeout(
-        supabase.from('profiles').select('*').eq('id', userRef.current.id).single(),
-        8000,
+      const { data } = await withRetry(
+        () => supabase.from('profiles').select('*').eq('id', userRef.current.id).single(),
+        { attempts: 2, timeoutMs: 10000 },
       )
       if (data) setProfile(data)
     } catch {}
