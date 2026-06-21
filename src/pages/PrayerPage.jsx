@@ -1282,45 +1282,35 @@ export default function PrayerPage() {
       )
     } catch {}
 
-    // Сохраняем в Supabase — с повтором при сбое сети. Раньше при неудачной
-    // попытке (частая история под VPN/плохой связью) экран продолжал
-    // показывать отметку как сделанную, а на сервере её не было — при
-    // следующем заходе сервер "отменял" отметку, хотя пользователь её ставил
+    // Сохраняем в Supabase в фоне. Локальная отметка (state + кеш в
+    // localStorage выше) остаётся главным источником правды для ЭТОГО
+    // устройства независимо от результата — раньше неудачное сохранение
+    // откатывало галочку обратно, и при плохой сети (частая история здесь)
+    // это выглядело как "то отмечается, то пропадает". Теперь сеть может
+    // сколько угодно глючить — на экране это больше не отражается, только
+    // предупреждение, что синхронизация с другими устройствами отложена.
+    syncPrayerToServer(prayerId, today, already)
+  }
+
+  async function syncPrayerToServer(prayerId, today, already) {
     try {
-      if (already) {
-        const { error } = await withRetry(
-          () => supabase.from('prayer_logs').delete()
-            .eq('user_id', user.id).eq('date', today).eq('prayer', prayerId),
-          { attempts: 3, timeoutMs: 10000 },
-        )
-        if (error) throw error
-      } else {
-        const { error } = await withRetry(
-          () => supabase.from('prayer_logs').upsert(
-            { user_id: user.id, date: today, prayer: prayerId },
-            { onConflict: 'user_id,date,prayer' }
-          ),
-          { attempts: 3, timeoutMs: 10000 },
-        )
-        if (error) throw error
-      }
+      const { error } = already
+        ? await withRetry(
+            () => supabase.from('prayer_logs').delete()
+              .eq('user_id', user.id).eq('date', today).eq('prayer', prayerId),
+            { attempts: 4, timeoutMs: 12000 },
+          )
+        : await withRetry(
+            () => supabase.from('prayer_logs').upsert(
+              { user_id: user.id, date: today, prayer: prayerId },
+              { onConflict: 'user_id,date,prayer' }
+            ),
+            { attempts: 4, timeoutMs: 12000 },
+          )
+      if (error) throw error
     } catch {
-      // Не удалось сохранить — откатываем оптимистичную отметку и сообщаем,
-      // чтобы пользователь не думал, что намаз засчитан, когда это не так
-      setDonePrayers(prev => {
-        const s = new Set(prev)
-        already ? s.add(prayerId) : s.delete(prayerId)
-        todayOverrideRef.current = s
-        try {
-          localStorage.setItem(`today-prayers-${user.id}-${today}`, JSON.stringify([...s]))
-        } catch {}
-        return s
-      })
-      setWeekData(prev => prev.map(d =>
-        d.date === today ? { ...d, count: d.count + (already ? 1 : -1) } : d
-      ))
-      setSaveError('Не удалось сохранить отметку — проверьте интернет и попробуйте снова')
-      setTimeout(() => setSaveError(''), 4000)
+      setSaveError('Не удалось синхронизировать отметку с сервером — попробуем позже. На этом устройстве она сохранена.')
+      setTimeout(() => setSaveError(''), 5000)
     }
   }
 
