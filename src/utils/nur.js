@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client'
+import { localDateStr } from './date'
 
 export const NUR_LEVELS = [
   { min: 0,    max: 100,  emoji: '🕯️', label: 'Искра',     color: '#2D6A4F' },
@@ -80,7 +81,7 @@ export async function addNurIfLevel(amount, levels, user, profile, setProfile) {
 // Ежедневный бонус при входе: +15 НУР раз в сутки
 export async function claimDailyLogin(user, profile, setProfile) {
   if (!user || !profile) return null
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr()
   const key = `nur_daily_${today}_${user.id}`
   if (localStorage.getItem(key)) return null
   localStorage.setItem(key, '1')

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
+import { localDateStr } from '../utils/date'
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -362,7 +363,7 @@ function WeekStrip({ weekData, streak, todayCount }) {
       <div style={ws.days}>
         {weekData.map((d, i) => {
           const fill    = d.count / 5
-          const isToday = d.date === new Date().toISOString().split('T')[0]
+          const isToday = d.date === localDateStr()
           const dayLabel = DAY_LABELS[(new Date(d.date).getDay() + 6) % 7]
           const allDone  = fill >= 1
           const partial  = fill > 0 && fill < 1
@@ -804,7 +805,7 @@ const qb = {
 
 // aladhan.com — таймзона определяется по координатам на сервере автоматически
 async function fetchTimings(lat, lon, method, school, fajrAngle, ishaAngle) {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = localDateStr()
   const latR = Math.round(lat * 100) / 100
   const lonR = Math.round(lon * 100) / 100
   const cacheKey = `pt-${latR}-${lonR}-${method}-${school}-${fajrAngle}-${ishaAngle}-${today}`
@@ -1131,9 +1132,9 @@ export default function PrayerPage() {
   }, [user])
 
   async function loadTracker() {
-    const today = new Date().toISOString().split('T')[0]
+    const today = localDateStr()
     const ago30 = new Date(); ago30.setDate(ago30.getDate() - 30)
-    const ago30str = ago30.toISOString().split('T')[0]
+    const ago30str = localDateStr(ago30)
 
     // Восстанавливаем отметки за сегодня, сделанные до перемонтирования
     // компонента (переход на другой экран и обратно сбрасывает todayOverrideRef)
@@ -1183,7 +1184,7 @@ export default function PrayerPage() {
     const days = []
     for (let i = 0; i < 7; i++) {
       const d = new Date(monday); d.setDate(monday.getDate() + i)
-      const ds = d.toISOString().split('T')[0]
+      const ds = localDateStr(d)
       const count = ds === today ? todaySet.size : data.filter(r => r.date === ds).length
       days.push({ date: ds, count })
     }
@@ -1193,7 +1194,7 @@ export default function PrayerPage() {
     let s = 0
     for (let i = 0; i < 30; i++) {
       const d = new Date(); d.setDate(d.getDate() - i)
-      const ds = d.toISOString().split('T')[0]
+      const ds = localDateStr(d)
       const cnt = ds === today ? todaySet.size : data.filter(r => r.date === ds).length
       if (cnt >= 5) s++
       else if (i > 0) break // сегодня может быть не завершён
@@ -1203,7 +1204,7 @@ export default function PrayerPage() {
 
   async function togglePrayer(prayerId, prayerName) {
     if (!user) return
-    const today = new Date().toISOString().split('T')[0]
+    const today = localDateStr()
     const already = donePrayers.has(prayerId)
 
     // Оптимистичное обновление
@@ -1277,7 +1278,7 @@ export default function PrayerPage() {
   // Сохраняем расписание намазов на сервер (для push-уведомлений когда приложение закрыто)
   useEffect(() => {
     if (!timings || !user || !notifOk) return
-    const today = new Date().toISOString().slice(0, 10)
+    const today = localDateStr()
     const utcOffset = -new Date().getTimezoneOffset()
     const prayerTimings = { Fajr: timings.Fajr, Dhuhr: timings.Dhuhr, Asr: timings.Asr, Maghrib: timings.Maghrib, Isha: timings.Isha }
     supabase.from('prayer_schedules').upsert(

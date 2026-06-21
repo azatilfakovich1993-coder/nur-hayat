@@ -6,6 +6,7 @@ import { APP_VERSES } from '../data/verses'
 import { HADITHS } from '../data/hadiths'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { addNur, addNurIfLevel, claimDailyLogin } from '../utils/nur'
+import { localDateStr } from '../utils/date'
 import Adhkar from '../components/Adhkar'
 import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget } from '../components/BeginnerPath'
 
@@ -144,7 +145,7 @@ export default function HomePage() {
   function fetchPrayers() {
     if (!user) return
     const now = new Date()
-    const today = now.toISOString().split('T')[0]
+    const today = localDateStr(now)
 
     // Локальная отметка за сегодня (PrayerPage сохраняет её сразу при тапе) —
     // показываем мгновенно, не дожидаясь ответа от Frankfurt
@@ -161,13 +162,13 @@ export default function HomePage() {
     const weekDates = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday)
       d.setDate(monday.getDate() + i)
-      return d.toISOString().split('T')[0]
+      return localDateStr(d)
     })
 
     // Последние 60 дней для подсчёта стрика
     const since = new Date(now)
     since.setDate(now.getDate() - 60)
-    const sinceStr = since.toISOString().split('T')[0]
+    const sinceStr = localDateStr(since)
 
     Promise.race([
       supabase.from('prayer_logs').select('prayer, date')
@@ -214,7 +215,7 @@ export default function HomePage() {
         const cursor = new Date(now)
         cursor.setDate(cursor.getDate() - 1)
         for (let i = 0; i < 60; i++) {
-          const dateStr = cursor.toISOString().split('T')[0]
+          const dateStr = localDateStr(cursor)
           if ((byDate[dateStr] || 0) >= 5) {
             count++
             cursor.setDate(cursor.getDate() - 1)
