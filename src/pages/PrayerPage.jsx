@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
+import { rewardFeedback, tapFeedback } from '../utils/feedback'
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -1235,6 +1236,9 @@ export default function PrayerPage() {
     if (!user) return
     const today = localDateStr()
     const already = donePrayers.has(prayerId)
+    // Звук/вибрация на каждое нажатие — не только когда начисляется НУР
+    // (НУР даётся только 1 раз за намаз в день, а тактильный отклик нужен всегда)
+    if (!already) rewardFeedback(); else tapFeedback()
 
     // Оптимистичное обновление
     setDonePrayers(prev => {
