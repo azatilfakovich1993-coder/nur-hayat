@@ -1,0 +1,6 @@
+{
+  "name": "nur-hayat-worker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Cloudflare Worker proxy in front of Supabase — no runtime npm dependencies"
+}
