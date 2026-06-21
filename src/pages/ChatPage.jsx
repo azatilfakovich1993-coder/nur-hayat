@@ -435,8 +435,9 @@ export default function ChatPage() {
       return
     }
     const last = messages[messages.length - 1]
-    const isNewLast = last && last.id !== lastMsgIdRef.current
-    lastMsgIdRef.current = last?.id ?? null
+    const lastKey = last ? (last.clientKey || last.id) : null
+    const isNewLast = last && lastKey !== lastMsgIdRef.current
+    lastMsgIdRef.current = lastKey
     if (!isNewLast || highlightId) return
     const isMine = last.user_id === user?.id
     if (isMine || isNearBottomRef.current) {
@@ -514,7 +515,7 @@ export default function ChatPage() {
     // Оптимистичное сообщение — показываем сразу со статусом pending
     const tempId = 'pending-' + Date.now()
     const tempMsg = {
-      id: tempId, pending: true,
+      id: tempId, clientKey: tempId, pending: true,
       user_id: user.id, user_name: userName, user_level: userLevel, user_avatar: userAvatar,
       content, room, created_at: new Date().toISOString(),
       reply_to_id: replyTo?.id || null,
@@ -561,8 +562,11 @@ export default function ChatPage() {
       return
     }
 
-    // Заменяем pending на реальное сообщение
-    setMessages(prev => prev.map(m => m.id === tempMsg.id ? data : m).filter((m, i, arr) => m.id === data.id ? arr.findIndex(x => x.id === data.id) === i : true))
+    // Заменяем pending на реальное сообщение. Сохраняем clientKey от временного —
+    // если React-key поменяется вместе с id, элемент размонтируется и домонтируется
+    // заново, и анимация появления сообщения запускается по новой (выглядит как
+    // что сообщение появилось не сразу, а через секунду-две после отправки).
+    setMessages(prev => prev.map(m => m.id === tempMsg.id ? { ...data, clientKey: tempMsg.clientKey } : m).filter((m, i, arr) => m.id === data.id ? arr.findIndex(x => x.id === data.id) === i : true))
     addNur(3, user, profile, setProfile)
 
     // Пуш-уведомление автору оригинального сообщения
@@ -827,7 +831,7 @@ export default function ChatPage() {
               const isHighlighted = highlightId === String(msg.id)
               const showDate = !prev || msgDateKey(msg.created_at) !== msgDateKey(prev.created_at)
               return (
-                <div key={msg.id} ref={el => { msgRefs.current[msg.id] = el }}
+                <div key={msg.clientKey || msg.id} ref={el => { msgRefs.current[msg.id] = el }}
                   style={isHighlighted ? {
                     borderRadius: 14,
                     animation: 'highlightPulse 3s ease-out forwards',
@@ -924,6 +928,7 @@ export default function ChatPage() {
               <div style={s.inputWrap}>
                 <textarea ref={inputRef} style={s.input} value={text}
                   onChange={onTextChange} onKeyDown={onKeyDown}
+                  onFocus={() => setTimeout(() => inputRef.current?.scrollIntoView({ block: 'center' }), 300)}
                   placeholder={`Написать в ${currentRoom.label}...`}
                   rows={1} maxLength={MAX_MSG_LEN} />
                 {text.length > MAX_MSG_LEN - 200 && (
