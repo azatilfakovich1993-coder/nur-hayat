@@ -9,8 +9,9 @@ dist-firebase/
 .DS_Store
 Thumbs.db
 
-# Capacitor Android (генерируется командой cap add android)
-android/
+# Capacitor Android — закоммичен намеренно: содержит ручные правки
+# (POST_NOTIFICATIONS/SCHEDULE_EXACT_ALARM в манифесте, иконки приложения),
+# которые иначе придётся каждый раз восстанавливать после `cap add android`
 ios/
 
 # Локальные состояния CLI — не для git

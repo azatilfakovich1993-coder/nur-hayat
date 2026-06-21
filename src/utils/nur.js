@@ -1,5 +1,6 @@
 import { supabase } from '../supabase/client'
 import { localDateStr } from './date'
+import { rewardFeedback } from './feedback'
 
 export const NUR_LEVELS = [
   { min: 0,    max: 100,  emoji: '🕯️', label: 'Искра',     color: '#2D6A4F' },
@@ -35,6 +36,7 @@ export function addNur(amount, user, profile, setProfile) {
   const oldNur = profile.nur ?? 0
   // Событие для немедленного обновления счётчика (подписывается только HomePage)
   window.dispatchEvent(new CustomEvent('nur-optimistic', { detail: { delta: amount } }))
+  rewardFeedback()
 
   const result = nurQueue.then(async () => {
     // Читаем актуальное значение из БД чтобы не затереть параллельные начисления

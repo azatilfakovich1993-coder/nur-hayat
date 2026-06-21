@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { addNur } from '../utils/nur'
+import { tapFeedback } from '../utils/feedback'
 
 // ── Анимированные эмодзи (Google Noto Animated) ───────────────
 // Конвертация символа в hex-код для URL
@@ -267,6 +268,7 @@ export default function ChatPage() {
   const scrollAnchorRef  = useRef(null) // savedHeight перед prepend
   const isNearBottomRef  = useRef(true) // юзер сейчас у низа чата или читает историю выше
   const lastMsgIdRef     = useRef(null) // id последнего сообщения на прошлом рендере
+  const firstScrollDoneRef = useRef(false) // первый скролл при входе — мгновенный, не smooth
   const msgsSignatureRef = useRef('')   // подпись текущих сообщений — чтобы не дёргать setMessages, если с сервера пришло то же самое
   const fileRef     = useRef()
   const msgRefs     = useRef({})  // id -> DOM element
@@ -284,6 +286,8 @@ export default function ChatPage() {
     let cancelled = false
     setLoadError(false)
     if (autoRetryRef.current) clearTimeout(autoRetryRef.current)
+    firstScrollDoneRef.current = false
+    lastMsgIdRef.current = null
 
     const cached = getCachedMessages(room)
     if (cached?.length) {
@@ -443,7 +447,13 @@ export default function ChatPage() {
     if (!isNewLast || highlightId) return
     const isMine = last.user_id === user?.id
     if (isMine || isNearBottomRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      // Первый скролл при открытии чата — мгновенный. Дистанция до конца
+      // длинной истории (40 сообщений) большая, smooth-анимация на неё не
+      // успевает завершиться за 1.5с до следующего опроса и обрывается
+      // где-то на середине — выглядит как "открылось не на последнем сообщении"
+      const behavior = firstScrollDoneRef.current ? 'smooth' : 'auto'
+      firstScrollDoneRef.current = true
+      bottomRef.current?.scrollIntoView({ behavior })
     }
   }, [messages])
 
@@ -511,6 +521,7 @@ export default function ChatPage() {
   async function sendMessage() {
     const content = text.trim()
     if (!content || sending || !user) return
+    tapFeedback()
     setText('')
     if (inputRef.current) inputRef.current.style.height = 'auto'
 
@@ -691,6 +702,7 @@ export default function ChatPage() {
 
   async function toggleReaction(msgId, emoji) {
     if (!user) return
+    tapFeedback()
     setMenuMsg(null)
     // Оптимистично обновляем локальный стейт
     setMessages(prev => prev.map(m => {
@@ -717,6 +729,7 @@ export default function ChatPage() {
   }
 
   function handleReply(msg) {
+    tapFeedback()
     setMenuMsg(null)
     setReplyTo({ id: msg.id, name: msg.user_name, text: msg.content || '📎 Медиа', userId: msg.user_id })
     setTimeout(() => inputRef.current?.focus(), 50)
@@ -1058,7 +1071,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
   function handlePressStart(e) {
     const t = e.touches?.[0]
     pressStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 }
-    pressTimer.current = setTimeout(() => onMenu(), 500)
+    pressTimer.current = setTimeout(() => { tapFeedback(); onMenu() }, 500)
   }
   function handlePressMove(e) {
     // Палец сдвинулся — это скролл/свайп, а не долгое нажатие. Отменяем меню.

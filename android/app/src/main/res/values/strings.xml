@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Nur Hayat</string>
+    <string name="title_activity_main">Nur Hayat</string>
+    <string name="package_name">app.nurhayat.islam</string>
+    <string name="custom_url_scheme">app.nurhayat.islam</string>
+</resources>
