@@ -10,6 +10,9 @@ let audioCtx = null
 // может тихо "потеряться" (например при срабатывании по скроллу, не по тапу).
 async function playTapSound(freq = 880, duration = 0.05) {
   try {
+    // WebView иногда переводит контекст в 'closed' сам (например, после
+    // долгого фона) — старый объект уже не оживить, нужен новый экземпляр
+    if (audioCtx?.state === 'closed') audioCtx = null
     audioCtx ??= new (window.AudioContext || window.webkitAudioContext)()
     if (audioCtx.state === 'suspended') await audioCtx.resume()
     const osc  = audioCtx.createOscillator()

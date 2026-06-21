@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 import { localDateStr } from '../utils/date'
+import { withRetry } from '../utils/network'
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -32,6 +33,17 @@ function parseTime(timeStr) {
 
 function diffSec(from, to) {
   return Math.max(0, Math.floor((to - from) / 1000))
+}
+
+function addDaysToDate(d, days) {
+  const next = new Date(d)
+  next.setDate(next.getDate() + days)
+  return next
+}
+
+function addHoursToTimeStr(timeStr, hours) {
+  const d = addDaysToDate(parseTime(timeStr), Math.round(hours / 24))
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 function secToHMS(s) {
@@ -1030,6 +1042,7 @@ export default function PrayerPage() {
   const [error,     setError]     = useState(null)
   const [now,       setNow]       = useState(new Date())
   const [notifOk,   setNotifOk]   = useState(false)
+  const [saveError, setSaveError] = useState('')
   const [remind,    setRemind]    = useState(() => {
     try { return JSON.parse(localStorage.getItem('prayerRemind') || '[30,20,10]') } catch { return [30, 20, 10] }
   })
@@ -1265,15 +1278,45 @@ export default function PrayerPage() {
       )
     } catch {}
 
-    // Сохраняем в Supabase
-    if (already) {
-      await supabase.from('prayer_logs').delete()
-        .eq('user_id', user.id).eq('date', today).eq('prayer', prayerId)
-    } else {
-      await supabase.from('prayer_logs').upsert(
-        { user_id: user.id, date: today, prayer: prayerId },
-        { onConflict: 'user_id,date,prayer' }
-      )
+    // Сохраняем в Supabase — с повтором при сбое сети. Раньше при неудачной
+    // попытке (частая история под VPN/плохой связью) экран продолжал
+    // показывать отметку как сделанную, а на сервере её не было — при
+    // следующем заходе сервер "отменял" отметку, хотя пользователь её ставил
+    try {
+      if (already) {
+        const { error } = await withRetry(
+          () => supabase.from('prayer_logs').delete()
+            .eq('user_id', user.id).eq('date', today).eq('prayer', prayerId),
+          { attempts: 3, timeoutMs: 10000 },
+        )
+        if (error) throw error
+      } else {
+        const { error } = await withRetry(
+          () => supabase.from('prayer_logs').upsert(
+            { user_id: user.id, date: today, prayer: prayerId },
+            { onConflict: 'user_id,date,prayer' }
+          ),
+          { attempts: 3, timeoutMs: 10000 },
+        )
+        if (error) throw error
+      }
+    } catch {
+      // Не удалось сохранить — откатываем оптимистичную отметку и сообщаем,
+      // чтобы пользователь не думал, что намаз засчитан, когда это не так
+      setDonePrayers(prev => {
+        const s = new Set(prev)
+        already ? s.add(prayerId) : s.delete(prayerId)
+        todayOverrideRef.current = s
+        try {
+          localStorage.setItem(`today-prayers-${user.id}-${today}`, JSON.stringify([...s]))
+        } catch {}
+        return s
+      })
+      setWeekData(prev => prev.map(d =>
+        d.date === today ? { ...d, count: d.count + (already ? 1 : -1) } : d
+      ))
+      setSaveError('Не удалось сохранить отметку — проверьте интернет и попробуйте снова')
+      setTimeout(() => setSaveError(''), 4000)
     }
   }
 
@@ -1321,14 +1364,27 @@ export default function PrayerPage() {
   // Следующий — первый у которого время ещё не наступило
   nextIdx = prayerList.findIndex(p => p.time && parseTime(p.time) > now)
 
-  const nextPrayer = nextIdx >= 0 ? prayerList[nextIdx] : null
-  const secToNext  = nextPrayer?.time ? diffSec(now, parseTime(nextPrayer.time)) : 0
+  // Все намазы сегодня прошли — считаем до завтрашнего Фаджра. Точное время
+  // на завтра не загружено (API отдаёт только на сегодня), поэтому берём
+  // сегодняшнее время Фаджра +24ч как приближение — обычно сдвиг день
+  // в день минимален и для обратного отсчёта этого достаточно
+  const allPassedToday = nextIdx === -1 && prayerList[0]?.time
+  const tomorrowFajr = allPassedToday
+    ? { ...prayerList[0], time: addHoursToTimeStr(prayerList[0].time, 24) }
+    : null
+
+  const nextPrayer = nextIdx >= 0 ? prayerList[nextIdx] : tomorrowFajr
+  const secToNext  = nextPrayer?.time
+    ? diffSec(now, allPassedToday ? addDaysToDate(parseTime(prayerList[0].time), 1) : parseTime(nextPrayer.time))
+    : 0
 
   // Общее время между предыдущим и следующим намазом (для прогресс дуги)
-  const prevPrayer = nextIdx > 0 ? prayerList[nextIdx - 1] : null
-  const totalSec   = (prevPrayer?.time && nextPrayer?.time)
-    ? diffSec(parseTime(prevPrayer.time), parseTime(nextPrayer.time))
-    : 0
+  const prevPrayer = allPassedToday ? prayerList[prayerList.length - 1] : (nextIdx > 0 ? prayerList[nextIdx - 1] : null)
+  const totalSec   = allPassedToday && prevPrayer?.time
+    ? diffSec(parseTime(prevPrayer.time), addDaysToDate(parseTime(prayerList[0].time), 1))
+    : (prevPrayer?.time && nextPrayer?.time)
+      ? diffSec(parseTime(prevPrayer.time), parseTime(nextPrayer.time))
+      : 0
 
   // Хиджри дата
   let hijriStr = ''
@@ -1478,6 +1534,10 @@ export default function PrayerPage() {
               🔄 Попробовать снова
             </button>
           </div>
+        )}
+
+        {saveError && (
+          <div style={s.saveErrorBanner}>{saveError}</div>
         )}
 
         {!loading && !error && timings && (
@@ -1832,6 +1892,12 @@ const s = {
   loadText: { fontSize:14, color:'var(--text-muted)' },
 
   errorBox: { display:'flex', flexDirection:'column', alignItems:'center', gap:12, padding:'60px 20px', textAlign:'center' },
+
+  saveErrorBanner: {
+    background:'rgba(220,53,69,.15)', border:'1px solid rgba(220,53,69,.3)',
+    color:'#ff6b6b', fontSize:13, padding:'10px 14px', borderRadius:12,
+    marginBottom:12, textAlign:'center', lineHeight:1.4,
+  },
 
   // Countdown card
   countdownCard: {
