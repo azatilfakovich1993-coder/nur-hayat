@@ -1058,6 +1058,7 @@ export default function PrayerPage() {
   // Локальный "источник правды" для намазов сегодня — чтобы поздний ответ
   // loadTracker (запрошенный до отметки намазов) не затирал стрик нулями
   const todayOverrideRef = useRef(null)
+  const togglingRef = useRef(new Set())
   const [method,    setMethod]    = useState(() => parseInt(localStorage.getItem('prayer_method')  || '15'))
   const [school,    setSchool]    = useState(() => parseInt(localStorage.getItem('prayer_school')  || '0'))
   const [fajrAngle, setFajrAngle] = useState(() => parseInt(localStorage.getItem('prayer_fajr')    || '18'))
@@ -1234,8 +1235,20 @@ export default function PrayerPage() {
 
   async function togglePrayer(prayerId, prayerName) {
     if (!user) return
+    // Защита от повторных тапов по одному намазу пока предыдущий ещё
+    // обрабатывается — без этого быстрые повторные нажатия читают
+    // устаревшее значение "отмечено/не отмечено" из замыкания и переключают
+    // не в ту сторону, из-за чего нужно 2-4 тапа, чтобы попасть в нужное состояние
+    if (togglingRef.current.has(prayerId)) return
+    togglingRef.current.add(prayerId)
+    setTimeout(() => togglingRef.current.delete(prayerId), 500)
+
     const today = localDateStr()
-    const already = donePrayers.has(prayerId)
+    // Берём актуальное состояние из todayOverrideRef, если оно уже есть —
+    // оно обновляется синхронно внутри setDonePrayers и надёжнее, чем
+    // donePrayers из замыкания рендера
+    const currentSet = todayOverrideRef.current ?? donePrayers
+    const already = currentSet.has(prayerId)
     // Звук/вибрация на каждое нажатие — не только когда начисляется НУР
     // (НУР даётся только 1 раз за намаз в день, а тактильный отклик нужен всегда)
     if (!already) rewardFeedback(); else tapFeedback()
@@ -1255,7 +1268,7 @@ export default function PrayerPage() {
       // Показываем награду
       setRewardName(prayerName)
       setRewardIdx(rewardCounter.current++)
-      const newDone = donePrayers.size + 1
+      const newDone = currentSet.size + 1
       if (newDone >= 5) setStreak(s => s + 1)
 
       // НУР начисляется максимум 1 раз за каждый намаз в день
