@@ -375,11 +375,13 @@ export default function ChatPage() {
     }
     updatePresence().catch(() => {})
 
-    // Polling — основной способ обновления на медленной сети без VPN
+    // Polling — основной способ обновления, т.к. WebSocket (Realtime) недоступен
+    // без VPN (Cloudflare тоже блокируется, проверено). Опрашиваем чаще, чтобы
+    // сообщения и онлайн-статус ощущались почти мгновенными
     const poll = setInterval(() => {
       pullMessages().catch(() => {})
       updatePresence().catch(() => {})
-    }, 5000)
+    }, 1500)
 
     void supabase.from('chat_reads')
       .select('last_read_at')
