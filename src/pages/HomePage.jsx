@@ -476,10 +476,10 @@ export default function HomePage() {
               const done = donePrayers.has(p)
               return (
                 <div key={p} style={s.prayerDot}>
-                  <div style={{ ...s.prayerCircle, background: done ? 'var(--gold)' : 'transparent', borderColor: done ? 'var(--gold)' : 'rgba(255,255,255,.15)', boxShadow: done ? '0 0 10px rgba(201,168,76,.5)' : 'none' }}>
+                  <div style={{ ...s.prayerCircle, background: done ? '#52b788' : 'transparent', borderColor: done ? '#52b788' : 'rgba(255,255,255,.15)', boxShadow: done ? '0 0 10px rgba(82,183,136,.5)' : 'none' }}>
                     {done && <span style={{ fontSize:13 }}>✓</span>}
                   </div>
-                  <div style={{ ...s.prayerLabel, color: done ? 'var(--gold)' : 'var(--text-dim)', fontWeight: done ? 600 : 400 }}>{PRAYER_RU[p]}</div>
+                  <div style={{ ...s.prayerLabel, color: done ? '#52b788' : 'var(--text-dim)', fontWeight: done ? 600 : 400 }}>{PRAYER_RU[p]}</div>
                 </div>
               )
             })}
