@@ -1,14 +1,17 @@
-import { Haptics, ImpactStyle, NotificationType } from '@capacitor/haptics'
+import { Haptics } from '@capacitor/haptics'
 import { Capacitor } from '@capacitor/core'
 
 let audioCtx = null
 
 // Короткий синтезированный "тап" — без аудиофайла, через Web Audio API.
 // Работает и в браузере, и в нативном приложении; уважает громкость медиа.
-function playTapSound(freq = 880, duration = 0.05) {
+// AudioContext стартует в состоянии "suspended" пока его не разблокирует
+// прямой тап пользователя — поэтому resume() обязательно ждём, иначе звук
+// может тихо "потеряться" (например при срабатывании по скроллу, не по тапу).
+async function playTapSound(freq = 880, duration = 0.05) {
   try {
     audioCtx ??= new (window.AudioContext || window.webkitAudioContext)()
-    if (audioCtx.state === 'suspended') audioCtx.resume()
+    if (audioCtx.state === 'suspended') await audioCtx.resume()
     const osc  = audioCtx.createOscillator()
     const gain = audioCtx.createGain()
     osc.frequency.value = freq
@@ -19,26 +22,37 @@ function playTapSound(freq = 880, duration = 0.05) {
     gain.connect(audioCtx.destination)
     osc.start()
     osc.stop(audioCtx.currentTime + duration)
-  } catch {}
+  } catch (err) {
+    console.warn('[Feedback] sound failed:', err?.message)
+  }
 }
 
-async function vibrate(style) {
+// Haptics.vibrate() дёргает Vibrator.vibrate() напрямую одним импульсом —
+// надёжнее, чем impact()/notification(), которые шлют waveform-паттерн
+// и на некоторых прошивках (бюджетные Xiaomi/MIUI) тихо игнорируются.
+async function vibrate(duration = 40) {
   if (!Capacitor.isNativePlatform()) return
-  try { await Haptics.impact({ style }) } catch {}
+  try {
+    await Haptics.vibrate({ duration })
+  } catch (err) {
+    console.warn('[Feedback] vibration failed:', err?.message)
+  }
 }
 
 // Лёгкий тап — для обычных действий (ответить, реакция, отправка)
 export function tapFeedback() {
-  vibrate(ImpactStyle.Light)
+  vibrate(35)
   playTapSound(880, 0.04)
 }
 
 // Более заметный отклик — для начисления НУР / наград
-export async function rewardFeedback() {
-  if (Capacitor.isNativePlatform()) {
-    try { await Haptics.notification({ type: NotificationType.SUCCESS }) } catch {}
-  } else {
-    vibrate(ImpactStyle.Medium)
-  }
+export function rewardFeedback() {
+  vibrate(70)
   playTapSound(1100, 0.07)
+}
+
+// Входящее сообщение от другого пользователя, пока чат открыт
+export function incomingMessageFeedback() {
+  vibrate(25)
+  playTapSound(660, 0.05)
 }

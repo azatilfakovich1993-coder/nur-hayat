@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useLocation } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { addNur } from '../utils/nur'
-import { tapFeedback } from '../utils/feedback'
+import { tapFeedback, incomingMessageFeedback } from '../utils/feedback'
 
 // ── Анимированные эмодзи (Google Noto Animated) ───────────────
 // Конвертация символа в hex-код для URL
@@ -241,6 +241,7 @@ export default function ChatPage() {
   const [loading,    setLoading]    = useState(true)
   const [sending,    setSending]    = useState(false)
   const [sendError,  setSendError]  = useState('')
+  const [lenWarning, setLenWarning] = useState(false)
   const [online,     setOnline]     = useState(1)
   const [recording,  setRecording]  = useState(false)
   const [recSeconds, setRecSeconds] = useState(0)
@@ -275,6 +276,7 @@ export default function ChatPage() {
   const mediaRef    = useRef(null)
   const chunksRef   = useRef([])
   const timerRef    = useRef(null)
+  const lenWarningTimerRef = useRef(null)
 
   const userName   = profile?.name       || user?.email?.split('@')[0] || 'Аноним'
   const userLevel  = profile?.level      || 'seeker'
@@ -443,9 +445,13 @@ export default function ChatPage() {
     const last = messages[messages.length - 1]
     const lastKey = last ? (last.clientKey || last.id) : null
     const isNewLast = last && lastKey !== lastMsgIdRef.current
+    const wasAlreadyOpen = firstScrollDoneRef.current
     lastMsgIdRef.current = lastKey
     if (!isNewLast || highlightId) return
     const isMine = last.user_id === user?.id
+    // Звук/вибрация на входящее — не на свои сообщения и не на первую
+    // загрузку истории (иначе "звякнет" 40 раз при открытии чата)
+    if (wasAlreadyOpen && !isMine && !last.pending) incomingMessageFeedback()
     if (isMine || isNearBottomRef.current) {
       // Первый скролл при открытии чата — мгновенный. Дистанция до конца
       // длинной истории (40 сообщений) большая, smooth-анимация на неё не
@@ -686,8 +692,14 @@ export default function ChatPage() {
   }
 
   function onTextChange(e) {
-    const val = e.target.value.slice(0, MAX_MSG_LEN)
+    const raw = e.target.value
+    const val = raw.slice(0, MAX_MSG_LEN)
     setText(val)
+    if (raw.length > MAX_MSG_LEN) {
+      setLenWarning(true)
+      clearTimeout(lenWarningTimerRef.current)
+      lenWarningTimerRef.current = setTimeout(() => setLenWarning(false), 3000)
+    }
     // Авто-расширение высоты по контенту, с потолком — дальше внутренний скролл
     const el = e.target
     el.style.height = 'auto'
@@ -946,10 +958,13 @@ export default function ChatPage() {
                   onFocus={() => setTimeout(() => inputRef.current?.scrollIntoView({ block: 'center' }), 300)}
                   placeholder={`Написать в ${currentRoom.label}...`}
                   rows={1} maxLength={MAX_MSG_LEN} />
-                {text.length > MAX_MSG_LEN - 200 && (
-                  <div style={{ ...s.charCount, color: text.length >= MAX_MSG_LEN ? '#ff5f5f' : 'var(--text-muted)' }}>
-                    {text.length}/{MAX_MSG_LEN}
+                {text.length > 0 && (
+                  <div style={{ ...s.charCount, color: MAX_MSG_LEN - text.length <= 100 ? '#ff5f5f' : 'var(--text-muted)' }}>
+                    {MAX_MSG_LEN - text.length}/{MAX_MSG_LEN}
                   </div>
+                )}
+                {lenWarning && (
+                  <div style={s.lenWarning}>Слишком длинный текст — максимум {MAX_MSG_LEN} символов, лишнее не вошло</div>
                 )}
               </div>
 
@@ -1419,6 +1434,12 @@ const s = {
     padding:'11px 16px', outline:'none', resize:'none', lineHeight:1.4, display:'block',
     maxHeight:120, overflowY:'auto' },
   charCount: { position:'absolute', right:14, bottom:-16, fontSize:11, fontFamily:'var(--font-ui)' },
+  lenWarning: {
+    position:'absolute', left:0, bottom:'calc(100% + 6px)', right:0,
+    background:'rgba(220,53,69,.95)', color:'#fff', fontSize:12,
+    padding:'6px 12px', borderRadius:10, fontFamily:'var(--font-ui)',
+    textAlign:'center', boxShadow:'0 4px 12px rgba(0,0,0,.3)',
+  },
   sendBtn: { width:44, height:44, borderRadius:'50%', flexShrink:0,
     background:'linear-gradient(135deg,#C9A84C,#F0D080)', color:'#070710',
     border:'none', cursor:'pointer', fontSize:18, fontWeight:700,
