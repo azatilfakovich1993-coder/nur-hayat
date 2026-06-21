@@ -1284,6 +1284,20 @@ export default function PrayerPage() {
           addNur(10, user, profile, setProfile)
         }
       }
+    } else {
+      // Снимаем отметку — вычитаем ровно то, что было начислено за неё
+      const nurKey = `prayer_nur_${today}_${prayerId}_${user.id}`
+      if (localStorage.getItem(nurKey)) {
+        localStorage.removeItem(nurKey)
+        const allFiveKey = `prayer_nur_${today}_all5_${user.id}`
+        if (localStorage.getItem(allFiveKey)) {
+          localStorage.removeItem(allFiveKey)
+          addNur(-40, user, profile, setProfile)
+          setStreak(s => Math.max(0, s - 1))
+        } else {
+          addNur(-10, user, profile, setProfile)
+        }
+      }
     }
 
     // Локальный кеш отметок за сегодня — чтобы HomePage не сбросил стрик
