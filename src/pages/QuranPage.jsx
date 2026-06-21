@@ -12,9 +12,12 @@ export default function QuranPage({ onTabChange }) {
     if (filter === 'mecca')  list = list.filter(s => s.place === 'M')
     if (filter === 'medina') list = list.filter(s => s.place === 'MD')
     if (search.trim()) {
-      const q = search.trim().toLowerCase()
+      // "-" и " " считаем одним и тем же, чтобы "Ан Ниса" находило "Ан-Ниса"
+      const norm = str => str.toLowerCase().replace(/[-\s]+/g, ' ').trim()
+      const q = norm(search)
       list = list.filter(s =>
         s.ru.toLowerCase().includes(q) ||
+        norm(s.translit || '').includes(q) ||
         s.ar.includes(q) ||
         String(s.id).includes(q)
       )
