@@ -58,6 +58,7 @@ function Field({ label, type, value, onChange, placeholder, autoFocus }) {
       <input
         className="input-field"
         type={type}
+        lang="ru"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
