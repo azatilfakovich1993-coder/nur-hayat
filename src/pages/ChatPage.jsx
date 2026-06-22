@@ -247,6 +247,7 @@ export default function ChatPage() {
   const [recSeconds, setRecSeconds] = useState(0)
   const [uploading,  setUploading]  = useState(false)
   const [showEmoji,  setShowEmoji]  = useState(false)
+  const [showAttachMenu, setShowAttachMenu] = useState(false)
   const [genderBlocked, setGenderBlocked] = useState(false)
   const [replyTo,    setReplyTo]    = useState(null)  // { id, name, text }
   const [menuMsg,    setMenuMsg]    = useState(null)  // сообщение с открытым меню
@@ -633,24 +634,39 @@ export default function ChatPage() {
 
   // ── Голосовое сообщение ──
   async function startRecording() {
+    let stream
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    } catch (err) {
+      console.warn('[Voice] getUserMedia failed:', err?.name, err?.message)
+      setSendError('Нет доступа к микрофону — проверьте разрешение в настройках приложения')
+      setTimeout(() => setSendError(''), 3000)
+      return
+    }
+    try {
+      // На некоторых WebView дефолтный mimeType MediaRecorder не поддержан,
+      // хотя getUserMedia прошёл успешно — явно выбираем то, что точно работает
+      const mimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
+        .find(t => window.MediaRecorder?.isTypeSupported?.(t)) || ''
       chunksRef.current = []
-      const mr = new MediaRecorder(stream)
+      const mr = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       mr.ondataavailable = e => chunksRef.current.push(e.data)
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop())
-        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
         await uploadVoice(blob)
       }
       mr.start()
       mediaRef.current = mr
       setRecording(true)
       setRecSeconds(0)
+      tapFeedback()
       timerRef.current = setInterval(() => setRecSeconds(s => s + 1), 1000)
-    } catch {
-      setSendError('Нет доступа к микрофону')
-      setTimeout(() => setSendError(''), 3000)
+    } catch (err) {
+      console.warn('[Voice] MediaRecorder failed:', err?.name, err?.message)
+      stream.getTracks().forEach(t => t.stop())
+      setSendError('Не удалось начать запись: ' + (err?.message || 'неизвестная ошибка'))
+      setTimeout(() => setSendError(''), 4000)
     }
   }
 
@@ -659,6 +675,7 @@ export default function ChatPage() {
     mediaRef.current?.stop()
     setRecording(false)
     setRecSeconds(0)
+    tapFeedback()
   }
 
   function cancelRecording() {
@@ -939,17 +956,33 @@ export default function ChatPage() {
               <input ref={fileRef} type="file"
                 accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
                 style={{ display:'none' }} onChange={handleFile} />
-              <button style={s.attachBtn} onClick={() => fileRef.current?.click()} title="Прикрепить файл">
-                📎
-              </button>
-
               {/* Сфотографировать — тот же handleFile, просто открывает камеру вместо галереи */}
               <input ref={cameraRef} type="file"
                 accept="image/*" capture="environment"
                 style={{ display:'none' }} onChange={handleFile} />
-              <button style={s.attachBtn} onClick={() => cameraRef.current?.click()} title="Сфотографировать">
-                📷
-              </button>
+
+              <div style={{ position:'relative' }}>
+                <button
+                  style={{ ...s.attachBtn, background: showAttachMenu ? 'rgba(201,168,76,.15)' : 'var(--bg-card)', borderColor: showAttachMenu ? 'rgba(201,168,76,.4)' : 'var(--border)' }}
+                  onClick={() => setShowAttachMenu(v => !v)}
+                  title="Прикрепить"
+                >
+                  📎
+                </button>
+                {showAttachMenu && (
+                  <>
+                    <div style={s.attachMenuBackdrop} onClick={() => setShowAttachMenu(false)} />
+                    <div style={s.attachMenu}>
+                      <button style={s.attachMenuItem} onClick={() => { setShowAttachMenu(false); cameraRef.current?.click() }}>
+                        <span style={s.attachMenuIcon}>📷</span> Камера
+                      </button>
+                      <button style={s.attachMenuItem} onClick={() => { setShowAttachMenu(false); fileRef.current?.click() }}>
+                        <span style={s.attachMenuIcon}>📁</span> Файл / Галерея
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
 
               {/* Эмодзи */}
               <button
@@ -1437,6 +1470,19 @@ const s = {
   attachBtn: { width:40, height:40, borderRadius:'50%', background:'var(--bg-card)',
     border:'1px solid var(--border)', fontSize:18, cursor:'pointer', flexShrink:0,
     display:'flex', alignItems:'center', justifyContent:'center' },
+  attachMenuBackdrop: { position:'fixed', inset:0, zIndex:10 },
+  attachMenu: {
+    position:'absolute', bottom:'calc(100% + 8px)', left:0, zIndex:11,
+    background:'var(--bg-surface)', border:'1px solid var(--border)', borderRadius:14,
+    boxShadow:'0 8px 24px rgba(0,0,0,.4)', overflow:'hidden', minWidth:180,
+    animation:'slideUp .18s ease',
+  },
+  attachMenuItem: {
+    display:'flex', alignItems:'center', gap:10, width:'100%', padding:'12px 16px',
+    background:'none', border:'none', cursor:'pointer', fontSize:14, color:'var(--text)',
+    fontFamily:'var(--font-ui)', textAlign:'left', borderBottom:'1px solid var(--border)',
+  },
+  attachMenuIcon: { fontSize:18 },
   inputWrap: { flex:1, position:'relative' },
   input: { width:'100%', background:'var(--bg-card)', border:'1px solid var(--border)',
     borderRadius:20, color:'var(--text)', fontFamily:'var(--font-ui)', fontSize:15,
