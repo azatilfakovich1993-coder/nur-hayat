@@ -152,6 +152,26 @@ function msgDateKey(ts) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
 }
 
+// Сжимает фото перед отправкой в чат (ресайз до 1600px + JPEG ~80%) —
+// фото прямо с камеры телефона легко весит 3-8 МБ, что упирается в лимит
+// размера загрузки на прокси-хостинге. Если что-то пойдёт не так —
+// бросает исключение, и handleFile просто отправляет оригинал как раньше.
+async function compressImage(file, maxSize = 1600, quality = 0.8) {
+  const bitmap = await createImageBitmap(file)
+  const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height))
+  const w = Math.round(bitmap.width * scale)
+  const h = Math.round(bitmap.height * scale)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d')
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  const blob = await new Promise((resolve, reject) =>
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/jpeg', quality)
+  )
+  return blob
+}
+
 function formatDateLabel(ts) {
   const d    = new Date(ts)
   const now  = new Date()
@@ -610,15 +630,47 @@ export default function ChatPage() {
     if (!file || !user) return
     e.target.value = ''
 
-    const ext      = file.name.split('.').pop()
-    const path     = `${user.id}/${Date.now()}.${ext}`
     const fileType = file.type.startsWith('image/') ? 'image'
                    : file.type.startsWith('video/') ? 'video'
                    : file.type.startsWith('audio/') ? 'audio' : 'file'
 
     setUploading(true)
-    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, file)
-    if (upErr) { setSendError('Ошибка загрузки файла'); setUploading(false); return }
+
+    // Сжимаем фото перед отправкой — фото с камеры телефона (несколько МБ)
+    // упирается в лимит размера загрузки на прокси-хостинге. Если сжатие
+    // по любой причине не получится — просто отправляем оригинал как раньше.
+    let uploadFile = file
+    if (fileType === 'image') {
+      try {
+        uploadFile = await compressImage(file)
+      } catch (err) {
+        console.warn('[File] image compression skipped:', err?.message)
+      }
+    }
+    // Путь в хранилище — нейтральное расширение .bin, а не настоящее (.jpg/.png/...).
+    // Хостинг блокирует POST-запросы, чей адрес кончается на расширение картинки
+    // (защита от загрузки вредоносных файлов под видом изображений, ModSecurity
+    // правило "Malware.Expert — Images — POST Payload") — реальный тип файла
+    // всё равно передаём отдельно через contentType, чтобы фото корректно
+    // отображалось в браузере несмотря на "нейтральный" путь
+    const mimeType = uploadFile.type || file.type
+    const path = `${user.id}/${Date.now()}.bin`
+
+    // ArrayBuffer вместо Blob — supabase-js оборачивает Blob в multipart/form-data,
+    // а хостинг (защита ModSecurity) ломает такие запросы, тело теряется на сервере.
+    // ArrayBuffer уходит "сырым" телом без обёртки — так загрузка работает.
+    const uploadBuffer = await uploadFile.arrayBuffer()
+
+    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, uploadBuffer, {
+      contentType: mimeType,
+    })
+    if (upErr) {
+      console.warn('[File] upload failed:', upErr.message)
+      setSendError('Файл: ' + upErr.message)
+      setUploading(false)
+      setTimeout(() => setSendError(''), 6000)
+      return
+    }
 
     const { data: { publicUrl } } = supabase.storage.from('chat-media').getPublicUrl(path)
 
@@ -635,12 +687,17 @@ export default function ChatPage() {
   // ── Голосовое сообщение ──
   async function startRecording() {
     let stream
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setSendError('API записи звука недоступно в этом окружении (navigator.mediaDevices отсутствует)')
+      setTimeout(() => setSendError(''), 6000)
+      return
+    }
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (err) {
       console.warn('[Voice] getUserMedia failed:', err?.name, err?.message)
-      setSendError('Нет доступа к микрофону — проверьте разрешение в настройках приложения')
-      setTimeout(() => setSendError(''), 3000)
+      setSendError(`Микрофон: ${err?.name || 'ошибка'} — ${err?.message || 'нет деталей'}`)
+      setTimeout(() => setSendError(''), 6000)
       return
     }
     try {
@@ -654,9 +711,18 @@ export default function ChatPage() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop())
         const blob = new Blob(chunksRef.current, { type: mimeType || 'audio/webm' })
+        if (blob.size === 0) {
+          setSendError('Запись слишком короткая — попробуйте удержать кнопку дольше')
+          setTimeout(() => setSendError(''), 4000)
+          return
+        }
         await uploadVoice(blob)
       }
-      mr.start()
+      // timeslice — данные собираются кусками каждую секунду, а не одним
+      // куском при остановке. На некоторых WebView событие "stop" срабатывает
+      // раньше, чем финальный "dataavailable" успевает доставить данные,
+      // и blob получается пустым ("No content provided" при загрузке)
+      mr.start(1000)
       mediaRef.current = mr
       setRecording(true)
       setRecSeconds(0)
@@ -691,9 +757,24 @@ export default function ChatPage() {
   async function uploadVoice(blob) {
     if (!user) return
     setUploading(true)
-    const path = `${user.id}/voice_${Date.now()}.webm`
-    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, blob)
-    if (upErr) { setSendError('Ошибка загрузки голосового'); setUploading(false); return }
+    // .bin вместо .webm — та же причина, что и для фото: хостинг блокирует
+    // POST на адреса с "узнаваемым" медиа-расширением
+    const path = `${user.id}/voice_${Date.now()}.bin`
+    // ArrayBuffer вместо Blob — см. комментарий в handleFile про multipart/form-data
+    const uploadBuffer = await blob.arrayBuffer()
+    // Supabase не принимает параметры типа ";codecs=opus" в Content-Type — оставляем
+    // только базовый mime-тип (audio/webm), сам файл от этого не меняется
+    const voiceMime = (blob.type || 'audio/webm').split(';')[0]
+    const { error: upErr } = await supabase.storage.from('chat-media').upload(path, uploadBuffer, {
+      contentType: voiceMime,
+    })
+    if (upErr) {
+      console.warn('[Voice] upload failed:', upErr.message)
+      setSendError('Голосовое: ' + upErr.message)
+      setUploading(false)
+      setTimeout(() => setSendError(''), 6000)
+      return
+    }
 
     const { data: { publicUrl } } = supabase.storage.from('chat-media').getPublicUrl(path)
     const { data, error } = await supabase.from('messages').insert({

@@ -5,6 +5,21 @@
 
 $SUPABASE_HOST = 'qnkgvsxjxjfmjopnzmdu.supabase.co';
 
+// CORS — ставим сами, не надеясь на то, что Supabase его пришлёт для
+// конкретного эндпоинта (для Storage он не всегда приходит, из-за этого
+// браузер блокировал загрузку фото/файлов с сообщением "Failed to fetch").
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS, HEAD');
+header('Access-Control-Allow-Headers: *');
+header('Access-Control-Expose-Headers: *');
+
+// Preflight-запрос (OPTIONS) браузер шлёт сам, до настоящего запроса —
+// на него достаточно ответить заголовками выше, до Supabase не доходим
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(204);
+    exit;
+}
+
 $path   = $_SERVER['REQUEST_URI'];
 $url    = 'https://' . $SUPABASE_HOST . $path;
 $method = $_SERVER['REQUEST_METHOD'];
@@ -27,7 +42,10 @@ if (!$hasAuth) {
     if ($auth) $headers[] = "Authorization: $auth";
 }
 
-$body = file_get_contents('php://input');
+// Загрузка файлов может занимать больше времени из-за нестабильного канала
+// до Supabase — увеличиваем лимиты, чтобы скрипт/curl не обрывали передачу раньше времени
+set_time_limit(60);
+@ini_set('memory_limit', '256M');
 
 $ch = curl_init($url);
 curl_setopt_array($ch, [
@@ -36,11 +54,12 @@ curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_HEADER         => true,
     CURLOPT_FOLLOWLOCATION => true,
-    CURLOPT_TIMEOUT        => 30,
+    CURLOPT_TIMEOUT        => 55,
     CURLOPT_SSL_VERIFYPEER => true,
     CURLOPT_ENCODING       => '', // принимать и распаковывать gzip/br от Supabase самим curl
 ]);
 if (!in_array($method, ['GET', 'HEAD'], true)) {
+    $body = file_get_contents('php://input');
     curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
 }
 
@@ -68,6 +87,7 @@ foreach (explode("\r\n", $rawHeaders) as $line) {
     if (strpos($lower, 'content-encoding:') === 0) continue;
     if (strpos($lower, 'connection:') === 0) continue;
     if (strpos($lower, 'content-length:') === 0) continue;
+    if (strpos($lower, 'access-control-') === 0) continue; // уже поставили свои выше, не дублируем
     if (strpos($line, 'HTTP/') === 0) continue;
     if (trim($line) === '') continue;
     header($line, false);

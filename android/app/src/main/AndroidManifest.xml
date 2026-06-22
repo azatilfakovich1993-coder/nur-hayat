@@ -36,8 +36,11 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Для точного времени напоминаний о намазе (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-    <!-- Для голосовых сообщений в чате (getUserMedia audio) -->
+    <!-- Для голосовых сообщений в чате (getUserMedia audio). BridgeWebChromeClient
+         в Capacitor требует RECORD_AUDIO И MODIFY_AUDIO_SETTINGS вместе — без
+         второго он отказывает в доступе даже если первое уже выдано -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Для фотографирования прямо в чат -->
     <uses-permission android:name="android.permission.CAMERA" />
 </manifest>
