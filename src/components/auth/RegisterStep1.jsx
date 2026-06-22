@@ -30,7 +30,7 @@ export default function RegisterStep1({ data, onNext }) {
 
       <div style={s.form}>
         <Field label="Имя" type="text" value={name} onChange={setName}
-               placeholder="Как тебя зовут?" autoFocus />
+               placeholder="Как тебя зовут?" />
         <Field label="Email" type="email" value={email} onChange={setEmail}
                placeholder="your@email.com" />
         <div style={s.passWrap}>
@@ -59,6 +59,8 @@ function Field({ label, type, value, onChange, placeholder, autoFocus }) {
         className="input-field"
         type={type}
         lang="ru"
+        autoComplete="off"
+        autoCorrect="off"
         value={value}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}

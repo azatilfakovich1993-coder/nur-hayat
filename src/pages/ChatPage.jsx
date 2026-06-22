@@ -272,6 +272,7 @@ export default function ChatPage() {
   const firstScrollDoneRef = useRef(false) // первый скролл при входе — мгновенный, не smooth
   const msgsSignatureRef = useRef('')   // подпись текущих сообщений — чтобы не дёргать setMessages, если с сервера пришло то же самое
   const fileRef     = useRef()
+  const cameraRef   = useRef()
   const msgRefs     = useRef({})  // id -> DOM element
   const mediaRef    = useRef(null)
   const chunksRef   = useRef([])
@@ -942,6 +943,14 @@ export default function ChatPage() {
                 📎
               </button>
 
+              {/* Сфотографировать — тот же handleFile, просто открывает камеру вместо галереи */}
+              <input ref={cameraRef} type="file"
+                accept="image/*" capture="environment"
+                style={{ display:'none' }} onChange={handleFile} />
+              <button style={s.attachBtn} onClick={() => cameraRef.current?.click()} title="Сфотографировать">
+                📷
+              </button>
+
               {/* Эмодзи */}
               <button
                 style={{ ...s.attachBtn, background: showEmoji ? 'rgba(201,168,76,.15)' : 'var(--bg-card)', borderColor: showEmoji ? 'rgba(201,168,76,.4)' : 'var(--border)' }}
@@ -1433,7 +1442,10 @@ const s = {
     borderRadius:20, color:'var(--text)', fontFamily:'var(--font-ui)', fontSize:15,
     padding:'11px 16px', outline:'none', resize:'none', lineHeight:1.4, display:'block',
     maxHeight:120, overflowY:'auto' },
-  charCount: { position:'absolute', right:14, bottom:-16, fontSize:11, fontFamily:'var(--font-ui)' },
+  charCount: {
+    position:'absolute', right:8, bottom:4, fontSize:10, fontFamily:'var(--font-ui)',
+    background:'rgba(7,7,16,.55)', padding:'1px 6px', borderRadius:8, pointerEvents:'none',
+  },
   lenWarning: {
     position:'absolute', left:0, bottom:'calc(100% + 6px)', right:0,
     background:'rgba(220,53,69,.95)', color:'#fff', fontSize:12,
