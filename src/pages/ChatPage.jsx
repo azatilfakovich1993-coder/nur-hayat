@@ -4,6 +4,9 @@ import { useLocation } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { addNur } from '../utils/nur'
 import { tapFeedback, incomingMessageFeedback } from '../utils/feedback'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import { Share } from '@capacitor/share'
 
 // ── Анимированные эмодзи (Google Noto Animated) ───────────────
 // Конвертация символа в hex-код для URL
@@ -271,6 +274,8 @@ export default function ChatPage() {
   const [genderBlocked, setGenderBlocked] = useState(false)
   const [replyTo,    setReplyTo]    = useState(null)  // { id, name, text }
   const [menuMsg,    setMenuMsg]    = useState(null)  // сообщение с открытым меню
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null) // id сообщения, ожидающего подтверждения удаления
+  const [viewerUrl,  setViewerUrl]  = useState(null)  // открытое во весь экран фото
   const [highlightId, setHighlightId] = useState(null)
   const [lastReadAt,  setLastReadAt]  = useState(null)
   const [userAvatars, setUserAvatars] = useState({}) // user_id -> avatar_url // когда другие последний раз читали этот чат
@@ -843,7 +848,10 @@ export default function ChatPage() {
     tapFeedback()
     setMenuMsg(null)
     setReplyTo({ id: msg.id, name: msg.user_name, text: msg.content || '📎 Медиа', userId: msg.user_id })
-    setTimeout(() => inputRef.current?.focus(), 50)
+    // Автофокус сразу после закрытия bottom sheet убран — на некоторых
+    // устройствах (MIUI) анимация открытия клавиатуры, накладываясь на
+    // анимацию закрытия меню, выглядит как зависание экрана на несколько
+    // секунд. Пользователь сам коснётся поля, чтобы открыть клавиатуру.
   }
 
   function insertEmoji(emoji) {
@@ -978,6 +986,7 @@ export default function ChatPage() {
                     onRetry={retryMessage}
                     replyToTime={msg.reply_to_id ? messages.find(m => m.id === msg.reply_to_id)?.created_at : null}
                     onJumpToReply={jumpToMessage}
+                    onOpenImage={setViewerUrl}
                   />
                 </div>
               )
@@ -1115,10 +1124,23 @@ export default function ChatPage() {
           msg={menuMsg}
           isMe={menuMsg.user_id === user?.id}
           onReply={() => handleReply(menuMsg)}
-          onDelete={() => deleteMessage(menuMsg.id)}
+          onDelete={() => setConfirmDeleteId(menuMsg.id)}
           onReaction={e => toggleReaction(menuMsg.id, e)}
           onClose={() => setMenuMsg(null)}
         />
+      )}
+
+      {/* ── Подтверждение удаления ── */}
+      {confirmDeleteId && (
+        <ConfirmDeleteModal
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={() => { deleteMessage(confirmDeleteId); setConfirmDeleteId(null) }}
+        />
+      )}
+
+      {/* ── Просмотр фото во весь экран ── */}
+      {viewerUrl && (
+        <ImageViewer url={viewerUrl} onClose={() => setViewerUrl(null)} />
       )}
 
       <style>{`
@@ -1127,6 +1149,7 @@ export default function ChatPage() {
         @keyframes recPulse { 0%,100%{opacity:1} 50%{opacity:.3} }
         @keyframes slideUp  { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
         @keyframes sheetUp  { from{transform:translateY(100%)} to{transform:translateY(0)} }
+        @keyframes fadeScaleIn { from{opacity:0;transform:translateY(-50%) scale(.92)} to{opacity:1;transform:translateY(-50%) scale(1)} }
         @keyframes emojiBounce { 0%{transform:scale(1)} 30%{transform:scale(1.35)} 60%{transform:scale(.9)} 100%{transform:scale(1)} }
         @keyframes highlightPulse {
           0%   { background: rgba(201,168,76,0.35); box-shadow: 0 0 0 3px rgba(201,168,76,0.4); }
@@ -1185,7 +1208,7 @@ function Avatar({ src, letter, style }) {
   )
 }
 
-function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry, replyToTime, onJumpToReply }) {
+function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry, replyToTime, onJumpToReply, onOpenImage }) {
   const letter  = msg.user_name?.charAt(0).toUpperCase() || '?'
   // Если профиль загружен (avatarSrcOverride !== undefined) — используем только его значение.
   // Это гарантирует что удалённый аватар не показывается из старых сообщений.
@@ -1245,7 +1268,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
       {msg.file_type === 'image' && (
         <img src={msg.file_url} alt="фото"
           style={{ width:'100%', borderRadius:10, marginBottom:6, display:'block', maxHeight:240, objectFit:'cover', cursor:'pointer' }}
-          onClick={() => window.open(msg.file_url, '_blank')} />
+          onClick={e => { e.stopPropagation(); onOpenImage?.(msg.file_url) }} />
       )}
       {/* Видео */}
       {msg.file_type === 'video' && (
@@ -1398,28 +1421,67 @@ function fallbackCopy(text) {
   document.body.removeChild(el)
 }
 
-async function copyImageToClipboard(url) {
+function copyImageToClipboard(url) {
+  // navigator.clipboard.write() требует синхронного вызова в рамках того же
+  // клика — "user activation" сгорает за время await fetch(), и WebView
+  // на Android после этого не отклоняет промис, а зависает без ошибки и без
+  // таймаута. ClipboardItem поддерживает Promise<Blob> как значение —
+  // вызываем write() сразу, а сам fetch разрешается уже внутри него.
+  if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+    copyToClipboard(url)
+    return
+  }
   try {
-    const res = await fetch(url)
-    const blob = await res.blob()
-    const mimeType = blob.type || 'image/png'
-    await navigator.clipboard.write([new ClipboardItem({ [mimeType]: blob })])
+    // Ключ ClipboardItem должен совпадать с реальным MIME-типом блоба —
+    // при несовпадении clipboard.write() отклоняется с ошибкой "Type X
+    // does not match the blob's type Y". Фото в чате после сжатия всегда
+    // image/jpeg (см. compressImage), поэтому фиксируем именно его.
+    const blobPromise = fetch(url).then(res => res.blob())
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+    Promise.race([
+      navigator.clipboard.write([new ClipboardItem({ 'image/jpeg': blobPromise })]),
+      timeout,
+    ]).catch(err => {
+      console.warn('[Copy image] failed:', err?.message)
+      copyToClipboard(url)
+    })
   } catch (err) {
-    console.warn('[Copy image] failed:', err.message)
-    // fallback: copy URL as text
+    console.warn('[Copy image] failed:', err?.message)
     copyToClipboard(url)
   }
 }
 
-function downloadFile(url, fileName) {
-  const a = document.createElement('a')
-  a.href = url
-  a.download = fileName
-  a.target = '_blank'
-  a.rel = 'noopener noreferrer'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+async function downloadFile(url, fileName) {
+  // В вебе <a download> работает нормально — оставляем как было.
+  if (!Capacitor.isNativePlatform()) {
+    const a = document.createElement('a')
+    a.href = url
+    a.download = fileName
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    return
+  }
+  // В Android-приложении (WebView) атрибут download игнорируется для
+  // файлов с другого домена — он просто открывал бы файл в браузере,
+  // а не сохранял. Поэтому скачиваем сами и отдаём через системное
+  // окно "Поделиться", где есть пункт "Сохранить" / "Сохранить в Фото".
+  try {
+    const res = await fetch(url)
+    const blob = await res.blob()
+    const base64 = await new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => resolve(reader.result.split(',')[1])
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
+    const written = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache })
+    await Share.share({ url: written.uri, dialogTitle: 'Сохранить файл' })
+  } catch (err) {
+    console.warn('[Download] failed:', err.message)
+  }
 }
 
 function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onClose }) {
@@ -1499,6 +1561,35 @@ function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onClose }) {
         </button>
       </div>
     </>
+  )
+}
+
+function ConfirmDeleteModal({ onCancel, onConfirm }) {
+  return (
+    <>
+      <div style={sh.backdrop} onClick={onCancel} />
+      <div style={sh.confirmBox}>
+        <div style={sh.confirmTitle}>Удалить сообщение?</div>
+        <div style={sh.confirmText}>Это действие нельзя отменить.</div>
+        <div style={sh.confirmRow}>
+          <button style={sh.confirmBtnCancel} onClick={onCancel}>Отмена</button>
+          <button style={sh.confirmBtnDanger} onClick={onConfirm}>Удалить</button>
+        </div>
+      </div>
+    </>
+  )
+}
+
+function ImageViewer({ url, onClose }) {
+  return (
+    <div style={sh.viewerWrap} onClick={onClose}>
+      <button style={sh.viewerClose} onClick={onClose}>✕</button>
+      <img src={url} alt="фото" style={sh.viewerImg} onClick={e => e.stopPropagation()} />
+      <div style={sh.viewerActions} onClick={e => e.stopPropagation()}>
+        <button style={sh.viewerActionBtn} onClick={() => copyImageToClipboard(url)}>📋 Копировать</button>
+        <button style={sh.viewerActionBtn} onClick={() => downloadFile(url, 'image.jpg')}>⬇️ Сохранить</button>
+      </div>
+    </div>
   )
 }
 
@@ -1653,8 +1744,10 @@ const b = {
 
 const sh = {
   backdrop: {
+    // backdropFilter (blur) убран — на слабых GPU он подвешивал отрисовку
+    // этого полноэкранного слоя на пару секунд, выглядя как зависание.
     position:'fixed', inset:0, zIndex:400,
-    background:'rgba(0,0,0,.5)', backdropFilter:'blur(4px)',
+    background:'rgba(0,0,0,.6)',
   },
   sheet: {
     position:'fixed', bottom:0, left:0, right:0, zIndex:401,
@@ -1692,4 +1785,44 @@ const sh = {
   itemIcon: { fontSize:20, width:28, textAlign:'center', flexShrink:0 },
   itemLabel: { fontSize:16, fontWeight:500 },
   itemDanger: { color:'#ff6b6b' },
+
+  confirmBox: {
+    position:'fixed', left:16, right:16, top:'50%', transform:'translateY(-50%)',
+    zIndex:401, background:'var(--bg-surface)', borderRadius:18, padding:'22px 18px',
+    fontFamily:'var(--font-ui)', boxShadow:'0 8px 40px rgba(0,0,0,.4)',
+    animation:'fadeScaleIn .18s ease',
+  },
+  confirmTitle: { fontSize:17, fontWeight:700, color:'var(--text)', textAlign:'center', marginBottom:6 },
+  confirmText: { fontSize:13, color:'var(--text-muted)', textAlign:'center', marginBottom:18 },
+  confirmRow: { display:'flex', gap:10 },
+  confirmBtnCancel: {
+    flex:1, padding:'12px 0', borderRadius:12, border:'1px solid var(--border)',
+    background:'var(--bg-card)', color:'var(--text)', fontSize:15, fontWeight:600,
+    cursor:'pointer', fontFamily:'var(--font-ui)',
+  },
+  confirmBtnDanger: {
+    flex:1, padding:'12px 0', borderRadius:12, border:'none',
+    background:'#ff6b6b', color:'#1a0606', fontSize:15, fontWeight:700,
+    cursor:'pointer', fontFamily:'var(--font-ui)',
+  },
+
+  viewerWrap: {
+    position:'fixed', inset:0, zIndex:410, background:'rgba(0,0,0,.92)',
+    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+  },
+  viewerClose: {
+    position:'absolute', top:'calc(var(--safe-top, 0px) + 14px)', right:14,
+    width:38, height:38, borderRadius:'50%', border:'none',
+    background:'rgba(255,255,255,.12)', color:'#fff', fontSize:18, cursor:'pointer',
+  },
+  viewerImg: { maxWidth:'92vw', maxHeight:'78vh', objectFit:'contain', borderRadius:8 },
+  viewerActions: {
+    position:'absolute', bottom:'calc(var(--safe-bottom, 0px) + 24px)',
+    display:'flex', gap:10,
+  },
+  viewerActionBtn: {
+    padding:'10px 16px', borderRadius:12, border:'1px solid rgba(255,255,255,.2)',
+    background:'rgba(255,255,255,.1)', color:'#fff', fontSize:13, fontWeight:600,
+    cursor:'pointer', fontFamily:'var(--font-ui)',
+  },
 }

@@ -28,7 +28,10 @@ $headers = [];
 $hasAuth = false;
 foreach (getallheaders() as $name => $value) {
     $lower = strtolower($name);
-    if (in_array($lower, ['host', 'content-length', 'connection'], true)) continue;
+    // accept-encoding клиента (браузер/приложение сами добавляют ", br") не
+    // пропускаем — он бы перекрыл наш CURLOPT_ENCODING ниже и снова просил
+    // у Supabase Brotli, который curl на этом хостинге не умеет распаковывать.
+    if (in_array($lower, ['host', 'content-length', 'connection', 'accept-encoding'], true)) continue;
     if ($lower === 'authorization') $hasAuth = true;
     $headers[] = "$name: $value";
 }
@@ -56,7 +59,11 @@ curl_setopt_array($ch, [
     CURLOPT_FOLLOWLOCATION => true,
     CURLOPT_TIMEOUT        => 55,
     CURLOPT_SSL_VERIFYPEER => true,
-    CURLOPT_ENCODING       => '', // принимать и распаковывать gzip/br от Supabase самим curl
+    // gzip/deflate — НЕ включаем br: на этом хостинге декодер Brotli в
+    // PHP-curl не работает, из-за чего успешные ответы Supabase (Cloudflare
+    // сжимает их Brotli'ом) обрывались с ошибкой "Failed writing received
+    // data to disk/application" — curl падал именно на распаковке тела.
+    CURLOPT_ENCODING       => 'gzip, deflate',
 ]);
 if (!in_array($method, ['GET', 'HEAD'], true)) {
     $body = file_get_contents('php://input');
