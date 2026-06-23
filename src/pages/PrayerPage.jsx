@@ -1361,10 +1361,14 @@ export default function PrayerPage() {
     const today = localDateStr()
     const utcOffset = -new Date().getTimezoneOffset()
     const prayerTimings = { Fajr: timings.Fajr, Dhuhr: timings.Dhuhr, Asr: timings.Asr, Maghrib: timings.Maghrib, Isha: timings.Isha }
+    // Без .then()/await запрос у supabase-js строится, но реально не отправляется —
+    // его fetch() запускается лениво внутри .then(), который раньше тут не вызывался.
     supabase.from('prayer_schedules').upsert(
       { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset },
       { onConflict: 'user_id' }
-    )
+    ).then(({ error }) => {
+      if (error) console.warn('[Prayer] schedule sync failed:', error.message)
+    })
   }, [timings, user?.id, notifOk, remind])
 
   // Вычисляем статус каждого намаза

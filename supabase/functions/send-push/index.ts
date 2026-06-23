@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // @ts-ignore
 import webPush from 'npm:web-push'
+import { getFcmAccessToken, sendFcm } from '../_shared/fcm.ts'
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -26,6 +27,9 @@ serve(async (req) => {
       Deno.env.get('VAPID_PRIVATE_KEY')!,
     )
 
+    const serviceAccount = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT')!)
+    const fcmProjectId = serviceAccount.project_id
+
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -33,7 +37,7 @@ serve(async (req) => {
 
     const { data: rows } = await supabaseClient
       .from('push_tokens')
-      .select('token')
+      .select('token, platform')
       .eq('user_id', recipient_id)
 
     if (!rows?.length) {
@@ -42,20 +46,29 @@ serve(async (req) => {
       })
     }
 
-    const payload = JSON.stringify({
-      title,
-      body:  body  || '',
-      url:   url   || '/chat',
-      tag:   tag   || 'nur-hayat',
-    })
+    const payload = { title, body: body || '', url: url || '/chat', tag: tag || 'nur-hayat' }
+    const jsonPayload = JSON.stringify(payload)
 
     let sent = 0
     const staleTokens: string[] = []
+    let fcmAccessToken: string | null = null
 
-    for (const { token } of rows) {
+    // Android регистрирует "сырой" FCM-токен (platform='android'), а не Web
+    // Push подписку — на нём web-push.sendNotification() падает на JSON.parse,
+    // поэтому push на Android реально никогда не доходил. Шлём по двум каналам.
+    for (const { token, platform } of rows) {
+      if (platform === 'android') {
+        try {
+          fcmAccessToken ??= await getFcmAccessToken(serviceAccount)
+          const { ok, stale } = await sendFcm(fcmAccessToken, fcmProjectId, token, { ...payload, channelId: 'chat_messages' })
+          if (ok) sent++
+          else if (stale) staleTokens.push(token)
+        } catch { /* временная ошибка FCM — не считаем токен протухшим */ }
+        continue
+      }
       try {
         const subscription = JSON.parse(token)
-        await webPush.sendNotification(subscription, payload)
+        await webPush.sendNotification(subscription, jsonPayload)
         sent++
       } catch (e: any) {
         if (e.statusCode === 410 || e.statusCode === 404) {
