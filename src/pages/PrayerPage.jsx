@@ -1245,7 +1245,7 @@ export default function PrayerPage() {
 
     const today = localDateStr()
     // Берём актуальное состояние из todayOverrideRef, если оно уже есть —
-    // оно обновляется синхронно внутри setDonePrayers и надёжнее, чем
+    // оно обновляется ниже сразу синхронным кодом и надёжнее, чем
     // donePrayers из замыкания рендера
     const currentSet = todayOverrideRef.current ?? donePrayers
     const already = currentSet.has(prayerId)
@@ -1253,13 +1253,15 @@ export default function PrayerPage() {
     // (НУР даётся только 1 раз за намаз в день, а тактильный отклик нужен всегда)
     if (!already) rewardFeedback(); else tapFeedback()
 
-    // Оптимистичное обновление
-    setDonePrayers(prev => {
-      const s = new Set(prev)
-      already ? s.delete(prayerId) : s.add(prayerId)
-      todayOverrideRef.current = s
-      return s
-    })
+    // Оптимистичное обновление. Считаем новый набор сразу здесь (не внутри
+    // функции-обновителя setDonePrayers) и сразу пишем в todayOverrideRef —
+    // React выполняет функцию-обновитель отложенно, и код ниже (сохранение
+    // в localStorage) мог прочитать ref ДО того, как тот обновится, из-за
+    // этого быстрое "отметил → снял" иногда сохраняло старое состояние.
+    const newSet = new Set(currentSet)
+    already ? newSet.delete(prayerId) : newSet.add(prayerId)
+    todayOverrideRef.current = newSet
+    setDonePrayers(newSet)
     setWeekData(prev => prev.map(d =>
       d.date === today ? { ...d, count: d.count + (already ? -1 : 1) } : d
     ))
@@ -1303,10 +1305,7 @@ export default function PrayerPage() {
     // Локальный кеш отметок за сегодня — чтобы HomePage не сбросил стрик
     // в 0, если её запрос к БД стартует раньше, чем долетит этот апдейт
     try {
-      localStorage.setItem(
-        `today-prayers-${user.id}-${today}`,
-        JSON.stringify([...(todayOverrideRef.current || [])])
-      )
+      localStorage.setItem(`today-prayers-${user.id}-${today}`, JSON.stringify([...newSet]))
     } catch {}
 
     // Сохраняем в Supabase в фоне. Локальная отметка (state + кеш в
