@@ -121,7 +121,20 @@ function clearAllTimers() { timerIds.forEach(clearTimeout); timerIds.length = 0 
 
 // prayerIndex * 100 + reminderMins = notification ID
 // Например: Fajr(0)*100+10 = 10, Asr(2)*100+20 = 220
-async function scheduleNotifs(prayerTimes, notifBefore) {
+//
+// Быстрое переключение нескольких галочек подряд запускает несколько
+// перекрывающихся вызовов scheduleNotifs (каждый — "отменить старые
+// будильники → поставить новые"). Если они выполняются не по порядку,
+// более ранний вызов может ДОПИСАТЬ будильник уже после того, как более
+// новый решил, что всё почистил — забытый будильник с устаревшим текстом
+// остаётся висеть до своего срабатывания. scheduleQueue гарантирует, что
+// каждый вызов полностью завершается, прежде чем начнётся следующий.
+let scheduleQueue = Promise.resolve()
+function scheduleNotifs(prayerTimes, notifBefore) {
+  scheduleQueue = scheduleQueue.then(() => doScheduleNotifs(prayerTimes, notifBefore))
+  return scheduleQueue
+}
+async function doScheduleNotifs(prayerTimes, notifBefore) {
   clearAllTimers()
   const now = new Date()
   const reminders = notifBefore.filter(Boolean)
