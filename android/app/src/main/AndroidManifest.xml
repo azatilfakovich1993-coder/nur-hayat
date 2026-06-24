@@ -43,4 +43,9 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <!-- Для фотографирования прямо в чат -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!-- Для автоопределения города на странице "Намаз" (navigator.geolocation).
+         Без этого Android всегда отвечает PERMISSION_DENIED, даже если GPS
+         включён — приложение никогда не получало шанс спросить разрешение. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 </manifest>

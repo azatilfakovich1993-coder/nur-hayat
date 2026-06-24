@@ -9,6 +9,10 @@ import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { Capacitor } from '@capacitor/core'
 
+// Идём через nurhayat.ru — сам nominatim.openstreetmap.org тоже блокируется
+// провайдерами (та же причина, что и для Supabase/аудио намазов)
+const NOMINATIM_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/nominatim`
+
 // ── Данные намазов ────────────────────────────────────────────
 const PRAYERS = [
   { id: 'Fajr',    ru: 'Фаджр',  ar: 'الفجر',  desc: 'Утренний',          icon: '🌙', color: '#7B6BAE' },
@@ -522,19 +526,29 @@ const pc = {
 }
 
 // ── Поиск города через Nominatim ─────────────────────────────
+// Без явного таймаута зависший/заблокированный запрос мог "висеть" неопределённо
+// долго, а ошибка тихо проглатывалась (return []) — пользователь видел вечный
+// крутящийся индикатор без какого-либо сообщения. Теперь таймаут даёт быстрый
+// явный отказ, а ошибка пробрасывается наверх, чтобы показать понятный текст.
 async function searchCities(query) {
   if (!query || query.length < 2) return []
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
   try {
     const res = await fetch(
-      `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=6&accept-language=ru&featuretype=city`
+      `${NOMINATIM_PROXY}/search?q=${encodeURIComponent(query)}&format=json&limit=6&accept-language=ru&featuretype=city`,
+      { signal: controller.signal }
     )
+    if (!res.ok) throw new Error('nominatim_error')
     const data = await res.json()
     return data.map(r => ({
       name:    r.display_name.split(',').slice(0, 2).join(',').trim(),
       lat:     parseFloat(r.lat),
       lon:     parseFloat(r.lon),
     }))
-  } catch { return [] }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ── Методы расчёта ────────────────────────────────────────────
@@ -1047,6 +1061,7 @@ export default function PrayerPage() {
   const [cityInput, setCityInput] = useState('')
   const [suggestions, setSuggestions] = useState([])
   const [searching,   setSearching]   = useState(false)
+  const [citySearchError, setCitySearchError] = useState(false)
   const searchTimer = useRef(null)
 
   const [location,  setLocation]  = useState(null)
@@ -1109,7 +1124,7 @@ export default function PrayerPage() {
   function loadByGeo() {
     setLoading(true); setError(null)
     if (!navigator.geolocation) {
-      setError('geo_blocked')
+      setError('geo_denied')
       setLoading(false)
       return
     }
@@ -1123,7 +1138,7 @@ export default function PrayerPage() {
           setLocation({ lat, lon, city: '', country: '' })
           try {
             const geo = await fetch(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=${lang}`
+              `${NOMINATIM_PROXY}/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=${lang}`
             )
             const gj = await geo.json()
             const city    = gj.address?.city || gj.address?.town || gj.address?.village || ''
@@ -1133,8 +1148,12 @@ export default function PrayerPage() {
         } catch { setError('api_error') }
         setLoading(false)
       },
-      () => { setError('geo_blocked'); setLoading(false) },
-      { timeout: 5000, maximumAge: 60000 }
+      // err.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT — раньше
+      // любая из этих причин (включая обычный таймаут, частый при поиске сигнала
+      // в помещении) показывала одно и то же "нет доступа к геолокации", даже
+      // если GPS на самом деле включён и просто не успел поймать сигнал.
+      err => { setError(err?.code === 1 ? 'geo_denied' : 'geo_timeout'); setLoading(false) },
+      { timeout: 15000, maximumAge: 60000 }
     )
   }
 
@@ -1147,12 +1166,19 @@ export default function PrayerPage() {
   function onCityInput(val) {
     setCityInput(val)
     clearTimeout(searchTimer.current)
+    setCitySearchError(false)
     if (val.length < 2) { setSuggestions([]); return }
     setSearching(true)
     searchTimer.current = setTimeout(async () => {
-      const results = await searchCities(val)
-      setSuggestions(results)
-      setSearching(false)
+      try {
+        const results = await searchCities(val)
+        setSuggestions(results)
+      } catch {
+        setSuggestions([])
+        setCitySearchError(true)
+      } finally {
+        setSearching(false)
+      }
     }, 500)
   }
 
@@ -1518,7 +1544,13 @@ export default function PrayerPage() {
                 </div>
               )}
 
-              {!savedCity && !searching && suggestions.length === 0 && cityInput.length < 2 && (
+              {!searching && citySearchError && (
+                <div style={s.cityHint}>⚠️ Не удалось найти город — проверьте интернет (возможно, нужен VPN) и попробуйте снова</div>
+              )}
+              {!savedCity && !searching && !citySearchError && suggestions.length === 0 && cityInput.length >= 2 && (
+                <div style={s.cityHint}>Город не найден</div>
+              )}
+              {!savedCity && !searching && !citySearchError && suggestions.length === 0 && cityInput.length < 2 && (
                 <div style={s.cityHint}>Введите название города для поиска</div>
               )}
             </div>
@@ -1556,12 +1588,16 @@ export default function PrayerPage() {
 
         {error && (
           <div style={s.errorBox}>
-            <div style={{ fontSize:48 }}>{error === 'geo_blocked' ? '📍' : '🌐'}</div>
+            <div style={{ fontSize:48 }}>{error === 'geo_denied' ? '📍' : error === 'geo_timeout' ? '🛰' : '🌐'}</div>
             <div style={{ fontSize:16, color:'var(--text)', fontWeight:600 }}>
-              {error === 'geo_blocked' ? 'Нет доступа к геолокации' : 'Не удалось загрузить времена намаза'}
+              {error === 'geo_denied' ? 'Нет доступа к геолокации'
+                : error === 'geo_timeout' ? 'Не удалось определить местоположение'
+                : 'Не удалось загрузить времена намаза'}
             </div>
             <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6 }}>
-              Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.
+              {error === 'geo_timeout'
+                ? 'GPS не успел поймать сигнал — попробуйте на открытом месте, или выберите город вручную.'
+                : 'Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.'}
             </div>
             {mode !== 'manual' && (
               <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город вручную</button>

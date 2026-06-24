@@ -1,9 +1,10 @@
 <?php
-// Прокси перед Supabase (Frankfurt) — обходит блокировку/замедление
-// провайдером прямого доступа к qnkgvsxjxjfmjopnzmdu.supabase.co.
-// Проксирует ТОЛЬКО на этот хост (open-proxy невозможен).
+// Прокси перед Supabase (Frankfurt) и Nominatim (поиск города по тексту/GPS) —
+// обходит блокировку/замедление провайдером прямого доступа к этим хостам.
+// Проксирует ТОЛЬКО эти два хоста (open-proxy невозможен).
 
-$SUPABASE_HOST = 'qnkgvsxjxjfmjopnzmdu.supabase.co';
+$SUPABASE_HOST  = 'qnkgvsxjxjfmjopnzmdu.supabase.co';
+$NOMINATIM_HOST = 'nominatim.openstreetmap.org';
 
 // CORS — ставим сами, не надеясь на то, что Supabase его пришлёт для
 // конкретного эндпоинта (для Storage он не всегда приходит, из-за этого
@@ -21,8 +22,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 $path   = $_SERVER['REQUEST_URI'];
-$url    = 'https://' . $SUPABASE_HOST . $path;
 $method = $_SERVER['REQUEST_METHOD'];
+
+// /nominatim/search?... -> https://nominatim.openstreetmap.org/search?...
+if (strpos($path, '/nominatim/') === 0) {
+    $targetHost = $NOMINATIM_HOST;
+    $url = 'https://' . $targetHost . substr($path, strlen('/nominatim'));
+} else {
+    $targetHost = $SUPABASE_HOST;
+    $url = 'https://' . $targetHost . $path;
+}
 
 $headers = [];
 $hasAuth = false;
@@ -43,6 +52,13 @@ foreach (getallheaders() as $name => $value) {
 if (!$hasAuth) {
     $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION'] ?? null;
     if ($auth) $headers[] = "Authorization: $auth";
+}
+
+// Политика использования Nominatim требует идентифицировать приложение
+// через User-Agent — без него (или с типовым User-Agent) они могут
+// ограничивать/блокировать запросы.
+if ($targetHost === $NOMINATIM_HOST) {
+    $headers[] = 'User-Agent: NurHayat/1.0 (https://nurhayat.ru; azatilfakovich1993@gmail.com)';
 }
 
 // Загрузка файлов может занимать больше времени из-за нестабильного канала
