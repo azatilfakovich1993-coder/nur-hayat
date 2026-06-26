@@ -10,6 +10,7 @@ import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
 import Adhkar from '../components/Adhkar'
 import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget } from '../components/BeginnerPath'
+import { generateShareCard, shareCardImage } from '../utils/shareCard'
 
 const PRAYER_NAMES = ['Fajr','Dhuhr','Asr','Maghrib','Isha']
 const PRAYER_RU    = { Fajr:'Фаджр', Dhuhr:'Зухр', Asr:'Аср', Maghrib:'Магриб', Isha:'Иша' }
@@ -56,6 +57,8 @@ export default function HomePage() {
   })
   const [sparks,      setSparks]      = useState([])
   const [nurAnim,     setNurAnim]     = useState(false)
+  const [sharingVerse,  setSharingVerse]  = useState(false)
+  const [sharingHadith, setSharingHadith] = useState(false)
   const [donePrayers, setDonePrayers] = useState(new Set())
   const [weekDone,    setWeekDone]    = useState([])  // bool[7] Пн..Вс текущей недели
   const [streak,      setStreak]      = useState(0)
@@ -299,6 +302,44 @@ export default function HomePage() {
     }
   }
 
+  async function handleShareVerse() {
+    if (!verse || sharingVerse) return
+    setSharingVerse(true)
+    try {
+      const blob = await generateShareCard({
+        kind: 'verse',
+        arabic: verse.arabic,
+        translit: verse.transliteration,
+        translation: verse.translation,
+        source: `Коран, ${verse.ref}`,
+      })
+      await shareCardImage(blob, 'Поделиться аятом')
+    } catch (err) {
+      console.warn('[ShareVerse] failed:', err?.message)
+    } finally {
+      setSharingVerse(false)
+    }
+  }
+
+  async function handleShareHadith() {
+    if (sharingHadith) return
+    setSharingHadith(true)
+    try {
+      const blob = await generateShareCard({
+        kind: 'hadith',
+        arabic: hadith.ar,
+        translit: hadith.translit,
+        translation: hadith.text,
+        source: hadith.source,
+      })
+      await shareCardImage(blob, 'Поделиться хадисом')
+    } catch (err) {
+      console.warn('[ShareHadith] failed:', err?.message)
+    } finally {
+      setSharingHadith(false)
+    }
+  }
+
   function handleHadithLike() {
     const newLiked = !hadithLiked
     setHadithLiked(newLiked)
@@ -440,6 +481,11 @@ export default function HomePage() {
             <div style={s.likeHint}>
               {liked ? 'Аят сохранён' : 'Тронул — нажми'}
             </div>
+
+            <button style={s.shareBtn} onClick={handleShareVerse} disabled={sharingVerse}>
+              <span style={{ fontSize:16 }}>↗</span>
+              <span>{sharingVerse ? 'Готовим…' : 'Поделиться'}</span>
+            </button>
           </div>
         </div>
 
@@ -465,6 +511,11 @@ export default function HomePage() {
               {hadithNurAnim && <div style={s.nurFloat}>+5 нур ✨</div>}
             </div>
             <div style={s.likeHint}>{hadithLiked ? 'Хадис сохранён' : 'Сохранить'}</div>
+
+            <button style={s.shareBtn} onClick={handleShareHadith} disabled={sharingHadith}>
+              <span style={{ fontSize:16 }}>↗</span>
+              <span>{sharingHadith ? 'Готовим…' : 'Поделиться'}</span>
+            </button>
           </div>
         </div>
 
@@ -832,6 +883,13 @@ const s = {
     boxShadow:'0 0 16px rgba(201,168,76,.5)'
   },
   likeHint: { fontSize:13, color:'var(--text-muted)' },
+  shareBtn: {
+    marginLeft:'auto', flexShrink:0, display:'flex', alignItems:'center', gap:6,
+    padding:'10px 16px', borderRadius:20,
+    background:'var(--bg-surface)', border:'1px solid var(--border)',
+    color:'var(--text-muted)', fontSize:14, fontFamily:'var(--font-ui)',
+    cursor:'pointer', outline:'none',
+  },
 
   // Streak
   motivCard: {

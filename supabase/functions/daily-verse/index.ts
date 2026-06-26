@@ -2,6 +2,7 @@ import { serve } from 'https://deno.land/std@0.177.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 // @ts-ignore
 import webPush from 'npm:web-push'
+import { getFcmAccessToken, sendFcm } from '../_shared/fcm.ts'
 
 const DAILY_VERSES = [
   { key: '2:153',  theme: 'Терпение',          translation: 'О те, которые уверовали! Обращайтесь за помощью к терпению и намазу. Воистину, Аллах — с терпеливыми.' },
@@ -77,18 +78,16 @@ serve(async (req) => {
   const dayIndex = Math.floor(Date.now() / 86400000) % DAILY_VERSES.length
   const verse = DAILY_VERSES[dayIndex]
 
-  const payload = JSON.stringify({
-    title: `🌙 Аят дня — ${verse.theme}`,
-    body:  verse.translation,
-    url:   '/',
-    tag:   'daily-verse',
-  })
+  const payload = { title: `🌙 Аят дня — ${verse.theme}`, body: verse.translation, url: '/', tag: 'daily-verse' }
+  const jsonPayload = JSON.stringify(payload)
 
-  // Берём только веб-пуш токены (platform IS NULL)
+  // Раньше брали только веб-пуш токены (platform IS NULL) — Android-приложение
+  // регистрирует "сырой" FCM-токен, а не Web Push подписку, и на нём
+  // webPush.sendNotification() падает на JSON.parse, поэтому Android-пользователи
+  // никогда не получали этот пуш. Теперь шлём по обоим каналам.
   const { data: tokens } = await supabase
     .from('push_tokens')
-    .select('user_id, token')
-    .is('platform', null)
+    .select('user_id, token, platform')
 
   if (!tokens?.length) {
     return new Response(JSON.stringify({ sent: 0, verse: verse.key }), {
@@ -98,10 +97,22 @@ serve(async (req) => {
 
   let sent = 0
   const staleTokens: string[] = []
+  const serviceAccount = JSON.parse(Deno.env.get('FIREBASE_SERVICE_ACCOUNT')!)
+  const fcmProjectId = serviceAccount.project_id
+  let fcmAccessToken: string | null = null
 
-  for (const { user_id, token } of tokens) {
+  for (const { token, platform } of tokens) {
+    if (platform === 'android') {
+      try {
+        fcmAccessToken ??= await getFcmAccessToken(serviceAccount)
+        const { ok, stale } = await sendFcm(fcmAccessToken, fcmProjectId, token, { ...payload, channelId: 'daily_verse' })
+        if (ok) sent++
+        else if (stale) staleTokens.push(token)
+      } catch { /* временная ошибка FCM — пробуем в следующий прогон */ }
+      continue
+    }
     try {
-      await webPush.sendNotification(JSON.parse(token), payload)
+      await webPush.sendNotification(JSON.parse(token), jsonPayload)
       sent++
     } catch (e: any) {
       if (e.statusCode === 410 || e.statusCode === 404) {
