@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../hooks/useAuth'
+import DawnLandscape from './DawnLandscape'
 
 const PARTS = [
   {
@@ -45,12 +46,13 @@ export default function Shahada({ onClose, onConfirm }) {
     <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
-        <button style={s.backBtn} onClick={onClose}>‹</button>
-        <div style={s.headMid}>
+        <DawnLandscape />
+        <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={onClose}>‹</button>
+        <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>
           <div style={s.headTitle}>Шахада</div>
           <div style={s.headSub}>Свидетельство веры</div>
         </div>
-        {confirmed && <div style={s.confirmedBadge}>✓ Подтверждена</div>}
+        {confirmed && <div style={{ ...s.confirmedBadge, position: 'relative', zIndex: 1 }}>✓ Подтверждена</div>}
       </div>
 
       <div style={s.scroll} className="scroll-y">
@@ -332,6 +334,7 @@ const s = {
     flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
     padding: '18px 20px 14px',
     borderBottom: '1px solid var(--border)',
+    position: 'relative', overflow: 'hidden',
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 12, flexShrink: 0,

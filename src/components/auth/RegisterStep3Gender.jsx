@@ -17,13 +17,13 @@ const GENDERS = [
   }
 ]
 
-export default function RegisterStep3Gender({ data, onNext, onBack }) {
+export default function RegisterStep3Gender({ data, onNext, onBack, loading, status }) {
   const [selected, setSelected] = useState(data.gender || 'male') // выбрано по умолчанию
 
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <div style={s.step}>Шаг 3 из 4</div>
+        <div style={s.step}>Шаг 2 из 2</div>
         <h2 style={s.title}>Твой пол</h2>
         <p style={s.sub}>В приложении есть разделы, где можно задать вопрос только мужчинам или только женщинам</p>
       </div>
@@ -62,14 +62,14 @@ export default function RegisterStep3Gender({ data, onNext, onBack }) {
         <button
           className="btn btn-primary"
           onClick={() => selected && onNext({ gender: selected })}
-          disabled={!selected}
+          disabled={!selected || loading}
           style={{
             flex: 2,
             opacity: selected ? 1 : 0.4,
             cursor: selected ? 'pointer' : 'default'
           }}
         >
-          Далее →
+          {loading ? `⏳ ${status || 'Подождите...'}` : 'Создать аккаунт ✨'}
         </button>
       </div>
     </div>

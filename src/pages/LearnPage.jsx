@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { useBackHandler } from '../hooks/useBackHandler'
 import Adhkar         from '../components/Adhkar'
 import AsmaHusna      from '../components/AsmaHusna'
 import Duas           from '../components/Duas'
@@ -10,170 +11,72 @@ import RamadanGuide   from '../components/RamadanGuide'
 import SurahLearn     from '../components/SurahLearn'
 import QuranAlphabet  from '../components/QuranAlphabet'
 import QandA          from '../components/QandA'
-import BeginnerPath, { BeginnerPathWidget } from '../components/BeginnerPath'
+import BeginnerPath, { BeginnerPathWidget, BeginnerPathHintCard, shouldShowBeginnerHint } from '../components/BeginnerPath'
 import Glossary      from '../components/Glossary'
 import Prophets     from '../components/Prophets'
 import QandAQuiz    from '../components/QandAQuiz'
 
 const BEGINNER_ITEMS = [
-  {
-    id: 'qa',
-    icon: '❓',
-    title: 'Вопросы и ответы',
-    sub: 'Достоверные ответы на частые вопросы начинающих',
-    gradient: 'linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05))',
-    border: 'rgba(201,168,76,.35)',
-    iconBg: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
-    glow: '0 0 16px rgba(201,168,76,.4)',
-    titleColor: 'var(--gold)',
-    badge: 'NEW',
-  },
-  {
-    id: 'prophets',
-    icon: '🌙',
-    title: 'Истории пророков',
-    sub: 'Адам, Нух, Ибрахим, Муса, Иса, Мухаммад ﷺ',
-    gradient: 'linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05))',
-    border: 'rgba(201,168,76,.4)',
-    iconBg: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
-    glow: '0 0 16px rgba(201,168,76,.4)',
-    titleColor: 'var(--gold)',
-    badge: 'NEW',
-  },
-  {
-    id: 'alphabet',
-    icon: '🔤',
-    title: 'Арабский алфавит',
-    sub: 'Буквы, махрадж, харакаты — по методу Муаллим Сани',
-    gradient: 'linear-gradient(135deg,rgba(82,183,136,.15),rgba(82,183,136,.05))',
-    border: 'rgba(82,183,136,.35)',
-    iconBg: 'linear-gradient(135deg,#1a7a56,#52b788)',
-    glow: '0 0 16px rgba(82,183,136,.4)',
-    titleColor: '#52b788',
-    badge: 'NEW',
-  },
-  {
-    id: 'surahs',
-    icon: '📚',
-    title: 'Разучивание сур',
-    sub: 'Фатиха, Ихлас, Фалак, Нас — аят за аятом',
-    gradient: 'linear-gradient(135deg,rgba(201,168,76,.15),rgba(201,168,76,.05))',
-    border: 'rgba(201,168,76,.35)',
-    iconBg: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
-    glow: '0 0 16px rgba(201,168,76,.4)',
-    titleColor: 'var(--gold)',
-    badge: 'NEW',
-  },
-  {
-    id: 'guide',
-    icon: '🕌',
-    title: 'Как читать намаз',
-    sub: 'Пошаговый гид с фото и вуду',
-    gradient: 'linear-gradient(135deg,rgba(180,80,80,.12),rgba(180,80,80,.04))',
-    border: 'rgba(180,80,80,.3)',
-    iconBg: 'linear-gradient(135deg,#a03030,#d06060)',
-    glow: '0 0 16px rgba(180,80,80,.4)',
-    titleColor: '#d07070',
-  },
+  { id: 'qa',       icon: '❓', title: 'Вопросы и ответы',  sub: 'Достоверные ответы на частые вопросы начинающих' },
+  { id: 'prophets', icon: '🌙', title: 'Истории пророков',  sub: 'Адам, Нух, Ибрахим, Муса, Иса, Мухаммад ﷺ' },
+  { id: 'alphabet', icon: '🔤', title: 'Арабский алфавит',  sub: 'Буквы, махрадж, харакаты — по методу Муаллим Сани' },
+  { id: 'surahs',   icon: '📚', title: 'Разучивание сур',   sub: 'Фатиха, Ихлас, Фалак, Нас — аят за аятом' },
+  { id: 'guide',    icon: '🕌', title: 'Как читать намаз',  sub: 'Пошаговый гид с фото и вуду' },
 ]
 
 const KNOWLEDGE_ITEMS = [
-  {
-    id: 'adhkar',
-    icon: '📿',
-    title: 'Азкары',
-    sub: 'Утренние и вечерние зикры',
-    gradient: 'linear-gradient(135deg,rgba(201,168,76,.12),rgba(201,168,76,.04))',
-    border: 'rgba(201,168,76,.3)',
-    iconBg: 'linear-gradient(135deg,#C9A84C,#F0D080)',
-    glow: '0 0 16px rgba(201,168,76,.45)',
-    titleColor: 'var(--gold)',
-  },
-  {
-    id: 'duas',
-    icon: '🤲',
-    title: 'Дуа',
-    sub: 'Молитвы из Корана и Сунны',
-    gradient: 'linear-gradient(135deg,rgba(46,168,122,.12),rgba(46,168,122,.04))',
-    border: 'rgba(46,168,122,.3)',
-    iconBg: 'linear-gradient(135deg,#1a7a56,#2ea87a)',
-    glow: '0 0 16px rgba(46,168,122,.4)',
-    titleColor: '#2ea87a',
-  },
-  {
-    id: 'asma',
-    icon: '✨',
-    title: '99 имён Аллаха',
-    sub: 'Асмауль-Хусна с описанием',
-    gradient: 'linear-gradient(135deg,rgba(100,60,180,.12),rgba(100,60,180,.04))',
-    border: 'rgba(100,60,180,.3)',
-    iconBg: 'linear-gradient(135deg,#5c3caa,#8a6fd0)',
-    glow: '0 0 16px rgba(100,60,180,.4)',
-    titleColor: '#a07de8',
-  },
-  {
-    id: 'calendar',
-    icon: '☪️',
-    title: 'Исламский календарь',
-    sub: 'Праздники, священные дни, история',
-    gradient: 'linear-gradient(135deg,rgba(74,100,180,.12),rgba(74,100,180,.04))',
-    border: 'rgba(74,100,180,.3)',
-    iconBg: 'linear-gradient(135deg,#3a5bbf,#6a8fd8)',
-    glow: '0 0 16px rgba(74,100,180,.4)',
-    titleColor: '#6a8fd8',
-  },
-  {
-    id: 'ramadan',
-    icon: '🌙',
-    title: 'Рамадан-гид',
-    sub: 'Пост, сухур, ифтар, ибадат',
-    gradient: 'linear-gradient(135deg,rgba(74,60,140,.25),rgba(120,80,200,.1))',
-    border: 'rgba(120,80,200,.35)',
-    iconBg: 'linear-gradient(135deg,#4a3c8c,#8a5fd8)',
-    glow: '0 0 18px rgba(120,80,200,.4)',
-    titleColor: '#a07de8',
-  },
+  { id: 'adhkar',   icon: '📿', title: 'Азкары',             sub: 'Утренние и вечерние зикры' },
+  { id: 'duas',     icon: '🤲', title: 'Дуа',                 sub: 'Молитвы из Корана и Сунны' },
+  { id: 'asma',     icon: '✨', title: '99 имён Аллаха',     sub: 'Асмауль-Хусна с описанием' },
+  { id: 'calendar', icon: '☪️', title: 'Исламский календарь', sub: 'Праздники, священные дни, история' },
+  { id: 'ramadan',  icon: '🌙', title: 'Рамадан-гид',        sub: 'Пост, сухур, ифтар, ибадат' },
 ]
 
 const TEST_ITEMS = [
-  {
-    id: 'quiz',
-    icon: '🎯',
-    title: 'Исламский квиз',
-    sub: 'Проверь знания — 10 вопросов, НУР за ответы',
-    gradient: 'linear-gradient(135deg,rgba(160,125,232,.15),rgba(160,125,232,.05))',
-    border: 'rgba(160,125,232,.4)',
-    iconBg: 'linear-gradient(135deg,#5c3caa,#a07de8)',
-    glow: '0 0 16px rgba(160,125,232,.4)',
-    titleColor: '#a07de8',
-    badge: 'NEW',
-  },
-  {
-    id: 'glossary',
-    icon: '📖',
-    title: 'Глоссарий',
-    sub: '50 исламских терминов с объяснением',
-    gradient: 'linear-gradient(135deg,rgba(74,144,217,.15),rgba(74,144,217,.05))',
-    border: 'rgba(74,144,217,.35)',
-    iconBg: 'linear-gradient(135deg,#1a4a8a,#4a90d9)',
-    glow: '0 0 16px rgba(74,144,217,.4)',
-    titleColor: '#4a90d9',
-    badge: 'NEW',
-  },
+  { id: 'quiz',     icon: '🎯', title: 'Исламский квиз', sub: 'Проверь знания — 10 вопросов, НУР за ответы' },
+  { id: 'glossary', icon: '📖', title: 'Глоссарий',       sub: '50 исламских терминов с объяснением' },
 ]
 
-function ItemCard({ item, onOpen }) {
+// Раньше у каждого из 12 пунктов был свой цвет рамки/свечения/заголовка (8 разных
+// цветов подряд в одном списке — визуально "прыгает"). Теперь один приглушённый
+// акцент на секцию, заголовок всегда белый — цвет несёт только иконка.
+const ACCENTS = {
+  gold: {
+    border: 'rgba(201,168,76,.22)',
+    gradient: 'linear-gradient(135deg,rgba(201,168,76,.08),rgba(201,168,76,.02))',
+    glow: '0 0 9px rgba(201,168,76,.16)',
+    iconBg: 'rgba(201,168,76,.15)',
+    iconColor: 'var(--gold)',
+  },
+  teal: {
+    border: 'rgba(79,174,143,.24)',
+    gradient: 'linear-gradient(135deg,rgba(79,174,143,.09),rgba(79,174,143,.02))',
+    glow: '0 0 9px rgba(79,174,143,.16)',
+    iconBg: 'rgba(79,174,143,.16)',
+    iconColor: '#5fcaa8',
+  },
+  violet: {
+    border: 'rgba(155,125,212,.26)',
+    gradient: 'linear-gradient(135deg,rgba(155,125,212,.1),rgba(155,125,212,.02))',
+    glow: '0 0 9px rgba(155,125,212,.18)',
+    iconBg: 'rgba(155,125,212,.16)',
+    iconColor: '#b39ce8',
+  },
+}
+
+function ItemCard({ item, accent, onOpen }) {
+  const a = ACCENTS[accent]
   return (
     <button
-      style={{ ...s.card, background: item.gradient, borderColor: item.border }}
+      style={{ ...s.card, background: a.gradient, borderColor: a.border }}
       onClick={() => onOpen(item.id)}
     >
-      <div style={{ ...s.iconWrap, background: item.iconBg, boxShadow: item.glow }}>
+      <div style={{ ...s.iconWrap, background: a.iconBg, boxShadow: a.glow, color: a.iconColor }}>
         <span style={s.iconEmoji}>{item.icon}</span>
       </div>
       <div style={s.cardText}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ ...s.cardTitle, color: item.titleColor }}>{item.title}</span>
+          <span style={s.cardTitle}>{item.title}</span>
           {item.badge && <span style={s.newBadge}>{item.badge}</span>}
         </div>
         <span style={s.cardSub}>{item.sub}</span>
@@ -185,9 +88,28 @@ function ItemCard({ item, onOpen }) {
 
 export default function LearnPage() {
   const [open, setOpen] = useState(null)
+  const [qaId, setQaId] = useState(null)
+  const [calendarEventId, setCalendarEventId] = useState(null)
+  const [showBeginnerHint, setShowBeginnerHint] = useState(shouldShowBeginnerHint)
   const navigate = useNavigate()
+  const location = useLocation()
   const { profile } = useAuth()
   const isSeeker = !profile?.level || profile.level === 'seeker'
+
+  // Переход из общего поиска приложения — сразу открыть нужный раздел
+  // (и конкретный вопрос в Q&A, если пришли из поиска по вопросам)
+  useEffect(() => {
+    if (!location.state?.openSection) return
+    setOpen(location.state.openSection)
+    if (location.state.qaId != null) setQaId(location.state.qaId)
+    if (location.state.eventId != null) setCalendarEventId(location.state.eventId)
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.state])
+
+  // Экраны знаний (алфавит, вуду и т.п.) открываются через состояние, а не
+  // роут — без этого аппаратная кнопка "назад" не знает про них и улетает
+  // сразу на Главную вместо возврата в список "Знаний"
+  useBackHandler(open !== null, () => { setOpen(null); setQaId(null) })
 
   return (
     <div style={s.wrap}>
@@ -212,23 +134,32 @@ export default function LearnPage() {
             <BeginnerPathWidget onOpen={() => setOpen('path')} />
           </>
         )}
+        {!isSeeker && showBeginnerHint && (
+          <>
+            <div style={s.sectionLabel}>Путь новичка</div>
+            <BeginnerPathHintCard
+              onOpen={() => setOpen('path')}
+              onHide={() => setShowBeginnerHint(false)}
+            />
+          </>
+        )}
 
         {/* 2. Для начинающих */}
-        <div style={{ ...s.sectionLabel, marginTop: isSeeker ? 10 : 6 }}>Для начинающих</div>
+        <div style={{ ...s.sectionLabel, marginTop: isSeeker || (!isSeeker && showBeginnerHint) ? 10 : 6 }}>Для начинающих</div>
         {BEGINNER_ITEMS.map(item => (
-          <ItemCard key={item.id} item={item} onOpen={setOpen} />
+          <ItemCard key={item.id} item={item} accent="gold" onOpen={setOpen} />
         ))}
 
         {/* 3. Знания и ибадат */}
         <div style={{ ...s.sectionLabel, marginTop: 10 }}>Знания и ибадат</div>
         {KNOWLEDGE_ITEMS.map(item => (
-          <ItemCard key={item.id} item={item} onOpen={setOpen} />
+          <ItemCard key={item.id} item={item} accent="teal" onOpen={setOpen} />
         ))}
 
         {/* 4. Проверь себя */}
         <div style={{ ...s.sectionLabel, marginTop: 10 }}>Проверь себя</div>
         {TEST_ITEMS.map(item => (
-          <ItemCard key={item.id} item={item} onOpen={setOpen} />
+          <ItemCard key={item.id} item={item} accent="violet" onOpen={setOpen} />
         ))}
 
         <div style={{ height: 24 }} />
@@ -241,13 +172,13 @@ export default function LearnPage() {
       {open === 'quiz'      && <QandAQuiz     onClose={() => setOpen(null)} />}
       {open === 'ramadan'  && <RamadanGuide    onClose={() => setOpen(null)} />}
       {open === 'alphabet' && <QuranAlphabet   onClose={() => setOpen(null)} />}
-      {open === 'qa'       && <QandA           onClose={() => setOpen(null)} />}
+      {open === 'qa'       && <QandA           initialOpenId={qaId} onClose={() => { setOpen(null); setQaId(null) }} />}
       {open === 'surahs'   && <SurahLearn      onClose={() => setOpen(null)} />}
       {open === 'adhkar'   && <Adhkar          onClose={() => setOpen(null)} />}
       {open === 'asma'     && <AsmaHusna       onClose={() => setOpen(null)} />}
       {open === 'duas'     && <Duas            onClose={() => setOpen(null)} />}
       {open === 'guide'    && <PrayerGuide     onClose={() => setOpen(null)} />}
-      {open === 'calendar' && <IslamicCalendar onClose={() => setOpen(null)} />}
+      {open === 'calendar' && <IslamicCalendar onClose={() => { setOpen(null); setCalendarEventId(null) }} initialEventId={calendarEventId} />}
     </div>
   )
 }
@@ -301,7 +232,7 @@ const s = {
   },
   iconEmoji: { fontSize: 24 },
   cardText: { flex: 1, display: 'flex', flexDirection: 'column', gap: 3 },
-  cardTitle: { fontSize: 15, fontWeight: 600 },
+  cardTitle: { fontSize: 15, fontWeight: 600, color: 'var(--text)' },
   cardSub: { fontSize: 12, color: 'var(--text-muted)' },
   arrow: { fontSize: 22, color: 'rgba(255,255,255,.2)', flexShrink: 0 },
 }

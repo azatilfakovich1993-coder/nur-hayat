@@ -23,14 +23,33 @@ function daysUntil(dateStr) {
   return Math.round((target - today) / 86400000)
 }
 
-export default function IslamicCalendar({ onClose }) {
+// Ищем событие по id — сперва в ближайшем будущем (та же дата, что видит попап
+// напоминания), иначе просто первое совпадение по годам.
+function findEventById(id) {
+  const years = Object.keys(EVENTS_BY_YEAR).map(Number).sort((a, b) => a - b)
+  const todayStr = new Date().toISOString().split('T')[0]
+  let fallback = null
+  for (const y of years) {
+    const ye = (EVENTS_BY_YEAR[y] || []).find(e => e.id === id)
+    if (!ye) continue
+    const def = ISLAMIC_EVENTS.find(e => e.id === id)
+    if (!def) continue
+    const merged = { ...def, ...ye, year: y }
+    if (!fallback) fallback = merged
+    if (ye.date >= todayStr) return merged
+  }
+  return fallback
+}
+
+export default function IslamicCalendar({ onClose, initialEventId }) {
   const swipe = useSwipeDown(onClose)
   const currentYear = new Date().getFullYear()
   const minYear = Math.min(...Object.keys(EVENTS_BY_YEAR).map(Number))
   const maxYear = Math.max(...Object.keys(EVENTS_BY_YEAR).map(Number))
 
-  const [year,     setYear]     = useState(currentYear)
-  const [selected, setSelected] = useState(null)
+  const initialSelected = initialEventId ? findEventById(initialEventId) : null
+  const [year,     setYear]     = useState(initialSelected?.year || currentYear)
+  const [selected, setSelected] = useState(initialSelected)
   const [detailTab, setDetailTab] = useState('whatToDo')
 
   const yearEvents = EVENTS_BY_YEAR[year] || []

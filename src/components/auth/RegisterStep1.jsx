@@ -23,7 +23,7 @@ export default function RegisterStep1({ data, onNext }) {
   return (
     <div style={s.wrap}>
       <div style={s.header}>
-        <div style={s.step}>Шаг 1 из 3</div>
+        <div style={s.step}>Шаг 1 из 2</div>
         <h2 style={s.title}>Создай аккаунт</h2>
         <p style={s.sub}>Твой путь начинается здесь</p>
       </div>

@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { Capacitor } from '@capacitor/core'
 import { supabase } from '../supabase/client'
 
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY
@@ -15,6 +16,10 @@ function urlBase64ToUint8Array(base64String) {
 export function usePushNotifications(user) {
   useEffect(() => {
     if (!user) return
+    // На Android есть отдельный нативный канал (useFcmToken.js, FCM-токен).
+    // Веб-пуш через тот же WebView регистрируется параллельно и даёт второй
+    // токен на одно устройство — отсюда удвоение каждого уведомления.
+    if (Capacitor.isNativePlatform()) return
 
     async function init() {
       try {

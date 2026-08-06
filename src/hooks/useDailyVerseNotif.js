@@ -8,7 +8,21 @@ const NOTIF_HOUR = 8   // 8:00 утра
 const DAYS_AHEAD = 30  // планируем на 30 дней вперёд
 const BASE_ID    = 9000 // ID чтобы не конфликтовать с намазом
 
-async function scheduleDailyVerseNotifs() {
+export async function cancelDailyVerseNotifs() {
+  try {
+    const { notifications: pending } = await LocalNotifications.getPending()
+    const old = pending.filter(n => n.id >= BASE_ID && n.id < BASE_ID + DAYS_AHEAD + 5)
+    if (old.length > 0) await LocalNotifications.cancel({ notifications: old })
+  } catch (err) {
+    console.warn('[DailyVerse] cancel error:', err.message)
+  }
+}
+
+export async function scheduleDailyVerseNotifs() {
+  if (localStorage.getItem('daily_verse_enabled') === 'false') {
+    await cancelDailyVerseNotifs()
+    return
+  }
   try {
     await LocalNotifications.createChannel({
       id:          CHANNEL_ID,

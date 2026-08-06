@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, forwardRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { SURAS } from '../data/suras'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../supabase/client'
@@ -238,6 +238,7 @@ function AudioPlayer({ suraId, verses, onVerseChange }) {
 export default function SuraPage() {
   const { id }   = useParams()
   const navigate = useNavigate()
+  const routerLocation = useLocation()
   const { user, profile, setProfile } = useAuth()
   const sura     = SURAS.find(s => s.id === Number(id))
 
@@ -247,6 +248,23 @@ export default function SuraPage() {
   const [liked,        setLiked]        = useState(new Set(profile?.liked_verses_keys || []))
   const [nurAnim,      setNurAnim]      = useState(null)
   const [playingVerse, setPlayingVerse] = useState(null)
+  // "Вид книги" — сплошной арабский текст без перевода/транскрипции, чёрным
+  // по белому, как печатный мусхаф. Доступно всем; по умолчанию выключено —
+  // новый пользователь как и раньше видит перевод/транскрипцию/аудио,
+  // включает книжный вид сам, если захочет.
+  const [bookMode, setBookMode] = useState(() => localStorage.getItem('quran_book_mode') === 'true')
+  function toggleBookMode() {
+    setBookMode(v => {
+      const next = !v
+      localStorage.setItem('quran_book_mode', String(next))
+      return next
+    })
+  }
+
+  // Переход к произвольной суре/аяту ("как полноценный электронный Коран")
+  const [showJump, setShowJump] = useState(false)
+  const [jumpSura, setJumpSura] = useState(1)
+  const [jumpAyah, setJumpAyah] = useState('')
 
   const tid      = profile?.translation_id || 131
   const language = profile?.language || 'ru'
@@ -275,6 +293,39 @@ export default function SuraPage() {
     }).catch(() => { setError(true); setLoading(false) })
   }, [id, tid])
 
+  // Переход по сохранённой позиции чтения (из "Продолжить чтение" на Коране
+  // или из виджета "Путь мусульманина") — прокручиваем к нужному аяту
+  useEffect(() => {
+    const targetAyah = routerLocation.state?.scrollToAyah
+    if (!verses.length || !targetAyah) return
+    requestAnimationFrame(() => {
+      verseRefs.current[targetAyah]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    navigate(routerLocation.pathname, { replace: true, state: {} })
+  }, [verses.length, routerLocation.state])
+
+  // Сохраняем точный аят, до которого дочитал — чтобы "Продолжить чтение"
+  // открывало не просто суру, а конкретное место (реюзаем quran_last_read,
+  // который уже читает виджет "Путь мусульманина", просто добавляем ayah)
+  const savePositionTimer = useRef(null)
+  function schedulePositionSave() {
+    if (!sura) return
+    clearTimeout(savePositionTimer.current)
+    savePositionTimer.current = setTimeout(() => {
+      let closestNum = null, closestTop = Infinity
+      for (const [num, el] of Object.entries(verseRefs.current)) {
+        if (!el) continue
+        const top = el.getBoundingClientRect().top
+        if (top >= -40 && top < closestTop) { closestTop = top; closestNum = num }
+      }
+      if (!closestNum) return
+      localStorage.setItem('quran_last_read', JSON.stringify({
+        suraId: sura.id, ru: sura.ru, ar: sura.ar, ayats: sura.ayats,
+        ayah: Number(closestNum), date: new Date().toISOString(),
+      }))
+    }, 600)
+  }
+
   // Засчитываем суру как прочитанную когда последний аят стал виден
   useEffect(() => {
     if (!verses.length || !sura) return
@@ -298,7 +349,7 @@ export default function SuraPage() {
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [verses.length, sura?.id])
+  }, [verses.length, sura?.id, bookMode])
 
   // Подгружаем реально лайкнутые аяты этой суры из БД. Раньше состояние
   // читалось из profile.liked_verses_keys — поля, которое нигде в коде не
@@ -351,12 +402,41 @@ export default function SuraPage() {
 
   const handleVerseChange = useCallback(v => setPlayingVerse(v), [])
 
+  function handleJump() {
+    const targetSura = SURAS.find(s => s.id === Number(jumpSura))
+    if (!targetSura) return
+    const targetAyah = Math.min(Math.max(Number(jumpAyah) || 1, 1), targetSura.ayats)
+    setShowJump(false)
+    if (targetSura.id === sura.id) {
+      verseRefs.current[targetAyah]?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } else {
+      navigate(`/quran/${targetSura.id}`, { state: { scrollToAyah: targetAyah } })
+    }
+  }
+
   if (!sura) return <div style={s.notFound}>Сура не найдена</div>
 
   return (
     <div style={s.page}>
       <div style={s.header}>
-        <button style={s.back} onClick={() => navigate('/quran')}>← Назад</button>
+        <div style={s.headerTopRow}>
+          <button style={s.back} onClick={() => navigate('/quran')}>← Назад</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <button style={s.bookModeBtn} onClick={toggleBookMode}>
+              {bookMode ? '📄 Обычный вид' : '📖 Вид книги'}
+            </button>
+            <button
+              style={s.jumpIconBtn}
+              onClick={() => { setJumpSura(sura.id); setJumpAyah(''); setShowJump(true) }}
+              aria-label="Перейти к другой суре или аяту"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2.4" strokeLinecap="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.2" y2="16.2" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <div style={s.headerCenter}>
           <div style={s.suraAr} className="arabic">{sura.ar}</div>
           <div style={s.suraRu}>{sura.ru}</div>
@@ -367,11 +447,11 @@ export default function SuraPage() {
             </span>
           </div>
         </div>
-        <AudioPlayer suraId={sura.id} verses={verses} onVerseChange={handleVerseChange} />
+        {!bookMode && <AudioPlayer suraId={sura.id} verses={verses} onVerseChange={handleVerseChange} />}
       </div>
 
-      <div style={s.scroll} className="scroll-y">
-        {sura.id !== 9 && (
+      <div style={s.scroll} className="scroll-y" onScroll={schedulePositionSave}>
+        {sura.id !== 9 && !bookMode && (
           <div style={s.bismillahWrap}>
             <div style={s.bismillah} className="arabic">{BISMILLAH}</div>
             <div style={s.bismillahTranslit}>
@@ -398,7 +478,23 @@ export default function SuraPage() {
             }}>Повторить</button>
           </div>
         )}
-        {!loading && !error && verses.map((verse, idx) => (
+        {!loading && !error && bookMode && (
+          <div style={s.mushafPage}>
+            {sura.id !== 9 && (
+              <div style={s.mushafBismillah} className="arabic">{BISMILLAH}</div>
+            )}
+            <div style={s.mushafText} className="arabic">
+              {verses.map(verse => (
+                <span key={verse.number} ref={el => { verseRefs.current[verse.number] = el }}>
+                  {verse.arabic}
+                  <span style={s.mushafMarker}>{verse.number}</span>{' '}
+                </span>
+              ))}
+            </div>
+            <div ref={lastVerseRef} style={{ height: 1 }} />
+          </div>
+        )}
+        {!loading && !error && !bookMode && verses.map((verse, idx) => (
           <VerseCard
             key={verse.number}
             ref={el => {
@@ -416,6 +512,34 @@ export default function SuraPage() {
         ))}
         <div style={{ height: 40 }} />
       </div>
+
+      {showJump && (
+        <div style={s.jumpOverlay} onClick={() => setShowJump(false)}>
+          <div style={s.jumpCard} onClick={e => e.stopPropagation()}>
+            <div style={s.jumpTitle}>Перейти к суре/аяту</div>
+            <label style={s.jumpLabel}>Сура</label>
+            <select style={s.jumpSelect} value={jumpSura} onChange={e => setJumpSura(e.target.value)}>
+              {SURAS.map(su => (
+                <option key={su.id} value={su.id}>{su.translit} ({su.ru})</option>
+              ))}
+            </select>
+            <label style={s.jumpLabel}>Аят</label>
+            <input
+              style={s.jumpInput}
+              type="number"
+              min="1"
+              max={SURAS.find(su => su.id === Number(jumpSura))?.ayats || 1}
+              placeholder={`1–${SURAS.find(su => su.id === Number(jumpSura))?.ayats || ''}`}
+              value={jumpAyah}
+              onChange={e => setJumpAyah(e.target.value)}
+            />
+            <div style={s.jumpBtns}>
+              <button style={s.jumpCancelBtn} onClick={() => setShowJump(false)}>Отмена</button>
+              <button style={s.jumpGoBtn} onClick={handleJump}>Перейти</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <style>{`
         @keyframes dotPulse  { 0%,100%{opacity:.3;transform:scale(.7)} 50%{opacity:1;transform:scale(1)} }
@@ -504,6 +628,67 @@ const s = {
   page:     { height: '100%', background: 'var(--bg-deep)', display: 'flex', flexDirection: 'column', overflow: 'hidden' },
   header:   { background: 'var(--bg-surface)', borderBottom: '1px solid var(--border)', padding: 'calc(var(--safe-top) + 12px) 16px 14px', display: 'flex', flexDirection: 'column', gap: 10, flexShrink: 0 },
   back:     { background: 'none', border: 'none', color: 'var(--gold)', fontSize: 14, cursor: 'pointer', padding: 0, alignSelf: 'flex-start', fontFamily: 'var(--font-ui)' },
+  headerTopRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  bookModeBtn: {
+    background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.3)',
+    borderRadius: 14, padding: '6px 12px', fontSize: 12, fontWeight: 600,
+    color: 'var(--gold)', cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)',
+  },
+  // Вид книги — сплошной мусхаф-стиль: чёрным по белому, без перевода
+  mushafPage: {
+    background: '#ffffff', borderRadius: 16, padding: '28px 20px', margin: '16px 0 8px',
+  },
+  mushafBismillah: {
+    fontFamily: "'Scheherazade New', serif", fontSize: 'calc(var(--arabic-size) + 4px)',
+    color: '#111', textAlign: 'center', direction: 'rtl', marginBottom: 20,
+  },
+  mushafText: {
+    fontFamily: "'Scheherazade New', serif", fontSize: 'calc(var(--arabic-size) + 2px)',
+    lineHeight: 2.9, color: '#111', direction: 'rtl', textAlign: 'justify',
+  },
+  mushafMarker: {
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    width: 22, height: 22, borderRadius: '50%', border: '1.5px solid #C9A84C',
+    color: '#9a7a20', fontSize: 11, fontWeight: 700, margin: '0 3px',
+    fontFamily: "'Inter', sans-serif", verticalAlign: 'middle',
+  },
+
+  // Переход к суре/аяту — компактная иконка в шапке
+  jumpIconBtn: {
+    width: 34, height: 34, borderRadius: 17, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.35)',
+    cursor: 'pointer', outline: 'none',
+  },
+  jumpOverlay: {
+    position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,.6)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  jumpCard: {
+    width: '100%', maxWidth: 340, background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 22, padding: '24px 22px', display: 'flex', flexDirection: 'column', gap: 14,
+  },
+  jumpTitle: { fontSize: 17, fontWeight: 700, color: 'var(--text)', marginBottom: 4, textAlign: 'center' },
+  jumpLabel: { fontSize: 12, color: 'var(--text-muted)', marginBottom: -6 },
+  jumpSelect: {
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12,
+    padding: '13px 14px', color: 'var(--text)', fontSize: 15, fontFamily: 'var(--font-ui)', outline: 'none',
+  },
+  jumpInput: {
+    background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 12,
+    padding: '13px 14px', color: 'var(--text)', fontSize: 15, fontFamily: 'var(--font-ui)', outline: 'none',
+  },
+  jumpBtns: { display: 'flex', gap: 10, marginTop: 14 },
+  jumpCancelBtn: {
+    flex: 1, padding: '11px 0', borderRadius: 14, border: '1px solid var(--border)',
+    background: 'none', color: 'var(--text-muted)', fontSize: 14, fontWeight: 600,
+    cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)',
+  },
+  jumpGoBtn: {
+    flex: 1, padding: '11px 0', borderRadius: 14, border: 'none',
+    background: 'var(--gold)', color: '#070710', fontSize: 14, fontWeight: 700,
+    cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)',
+  },
   headerCenter: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 },
   suraAr:   { fontFamily: "'Scheherazade New', serif", fontSize: 32, color: 'var(--gold)', textShadow: '0 0 20px rgba(201,168,76,.4)' },
   suraRu:   { fontSize: 18, fontWeight: 600, color: 'var(--text)' },

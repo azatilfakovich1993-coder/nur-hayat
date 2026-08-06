@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, lazy, Suspense } from 'react'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../supabase/client'
 import { fetchVerse } from '../utils/fetchVerse'
@@ -8,9 +8,15 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { addNur, addNurIfLevel, claimDailyLogin } from '../utils/nur'
 import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
+import { trackEvent } from '../utils/analytics'
 import Adhkar from '../components/Adhkar'
-import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget } from '../components/BeginnerPath'
+import BeginnerPath, { BeginnerPathWidget, ProgressWidget, MuslimPath, MuslimPathWidget, BeginnerPathHintCard, shouldShowBeginnerHint } from '../components/BeginnerPath'
 import { generateShareCard, shareCardImage } from '../utils/shareCard'
+import EidHomeBanner from '../components/EidHomeBanner'
+// Ленивая загрузка: индекс поиска тянет реальный текстовый контент из всех
+// разделов Знаний (словарь, дуа, азкары, 99 имён, пророки) — держим это вне
+// бандла главного экрана, грузим только по нажатию на лупу.
+const AppSearch = lazy(() => import('../components/AppSearch'))
 
 const PRAYER_NAMES = ['Fajr','Dhuhr','Asr','Maghrib','Isha']
 const PRAYER_RU    = { Fajr:'Фаджр', Dhuhr:'Зухр', Asr:'Аср', Maghrib:'Магриб', Isha:'Иша' }
@@ -37,10 +43,98 @@ function getMilestoneInfo(streak) {
 
 function getGreeting() {
   const h = new Date().getHours()
-  if (h >= 5  && h < 12) return { text: 'Доброе утро',  icon: '☀️' }
-  if (h >= 12 && h < 17) return { text: 'Добрый день',  icon: '🌤️' }
-  if (h >= 17 && h < 21) return { text: 'Добрый вечер', icon: '🌆' }
-  return { text: 'Доброй ночи', icon: '🌙' }
+  if (h >= 5  && h < 12) return { text: 'Доброе утро',  period: 'morning' }
+  if (h >= 12 && h < 17) return { text: 'Добрый день',  period: 'day' }
+  if (h >= 17 && h < 21) return { text: 'Добрый вечер', period: 'evening' }
+  return { text: 'Доброй ночи', period: 'night' }
+}
+
+// ── Иллюстрированная иконка времени суток (вместо эмодзи) ──────────────────
+function GreetingIcon({ period }) {
+  if (period === 'morning') return (
+    <svg width="24" height="24" viewBox="0 0 40 40" style={{ borderRadius: 7 }}>
+      <defs>
+        <linearGradient id="skyMorning" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#233252"/><stop offset="55%" stopColor="#6b6a7a"/><stop offset="100%" stopColor="#e8a25f"/></linearGradient>
+        <linearGradient id="seaMorning" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1c2438"/><stop offset="100%" stopColor="#0c1018"/></linearGradient>
+        <radialGradient id="sunMorning" cx="50%" cy="50%" r="60%"><stop offset="0%" stopColor="#fffbe6"/><stop offset="50%" stopColor="#ffd27a"/><stop offset="100%" stopColor="#e89a3a"/></radialGradient>
+        <radialGradient id="glowMorning" cx="50%" cy="50%" r="55%"><stop offset="0%" stopColor="#ffd27a" stopOpacity=".55"/><stop offset="100%" stopColor="#ffd27a" stopOpacity="0"/></radialGradient>
+      </defs>
+      <rect width="40" height="19" fill="url(#skyMorning)"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaMorning)"/>
+      <circle cx="20" cy="19.5" r="13" fill="url(#glowMorning)"/>
+      <circle cx="20" cy="19.5" r="7" fill="url(#sunMorning)"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaMorning)" opacity=".5"/>
+      <rect x="0" y="18.4" width="40" height="1.2" fill="#f0c088" opacity=".85"/>
+      <ellipse cx="20" cy="24" rx="8.5" ry="1" fill="#ffd27a" opacity=".5"/>
+      <ellipse cx="19" cy="27" rx="5.5" ry=".8" fill="#ffd27a" opacity=".38"/>
+      <ellipse cx="21" cy="29.5" rx="6.5" ry=".7" fill="#ffd27a" opacity=".28"/>
+      <ellipse cx="20" cy="32" rx="3.5" ry=".55" fill="#ffd27a" opacity=".18"/>
+    </svg>
+  )
+  if (period === 'day') return (
+    <svg width="24" height="24" viewBox="0 0 40 40" style={{ borderRadius: 7 }}>
+      <defs>
+        <radialGradient id="bgDay" cx="50%" cy="50%" r="75%"><stop offset="0%" stopColor="#3a2a15"/><stop offset="100%" stopColor="#1c130c"/></radialGradient>
+        <radialGradient id="sunDay" cx="50%" cy="50%" r="60%"><stop offset="0%" stopColor="#fff6da"/><stop offset="45%" stopColor="#f7c657"/><stop offset="100%" stopColor="#e8933a"/></radialGradient>
+        <radialGradient id="glowDay" cx="50%" cy="50%" r="60%"><stop offset="0%" stopColor="#f7c657" stopOpacity=".55"/><stop offset="100%" stopColor="#f7c657" stopOpacity="0"/></radialGradient>
+      </defs>
+      <rect width="40" height="40" fill="url(#bgDay)"/>
+      <circle cx="20" cy="20" r="17" fill="url(#glowDay)"/>
+      <g stroke="#f7c657" strokeWidth="1.6" strokeLinecap="round" opacity=".85">
+        <line x1="20" y1="4" x2="20" y2="8"/>
+        <line x1="20" y1="32" x2="20" y2="36"/>
+        <line x1="4" y1="20" x2="8" y2="20"/>
+        <line x1="32" y1="20" x2="36" y2="20"/>
+        <line x1="8.3" y1="8.3" x2="11" y2="11"/>
+        <line x1="29" y1="29" x2="31.7" y2="31.7"/>
+        <line x1="31.7" y1="8.3" x2="29" y2="11"/>
+        <line x1="11" y1="29" x2="8.3" y2="31.7"/>
+      </g>
+      <circle cx="20" cy="20" r="9" fill="url(#sunDay)"/>
+    </svg>
+  )
+  if (period === 'evening') return (
+    <svg width="24" height="24" viewBox="0 0 40 40" style={{ borderRadius: 7 }}>
+      <defs>
+        <linearGradient id="skyEvening" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#2b1830"/><stop offset="100%" stopColor="#4a2a2e"/></linearGradient>
+        <linearGradient id="seaEvening" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#33202f"/><stop offset="100%" stopColor="#120a18"/></linearGradient>
+        <radialGradient id="sunEvening" cx="50%" cy="35%" r="65%"><stop offset="0%" stopColor="#ffcf7a"/><stop offset="60%" stopColor="#ef7f3d"/><stop offset="100%" stopColor="#b8461f"/></radialGradient>
+      </defs>
+      <rect width="40" height="19" fill="url(#skyEvening)"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaEvening)"/>
+      <circle cx="20" cy="19" r="10" fill="url(#sunEvening)"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaEvening)" opacity=".55"/>
+      <ellipse cx="20" cy="24" rx="9.5" ry="1.1" fill="#ef7f3d" opacity=".5"/>
+      <ellipse cx="19" cy="27.5" rx="6" ry=".85" fill="#ef7f3d" opacity=".38"/>
+      <ellipse cx="21" cy="30" rx="7" ry=".75" fill="#ef7f3d" opacity=".26"/>
+      <ellipse cx="20" cy="32.5" rx="4" ry=".6" fill="#ef7f3d" opacity=".16"/>
+    </svg>
+  )
+  return (
+    <svg width="24" height="24" viewBox="0 0 40 40" style={{ borderRadius: 7 }}>
+      <defs>
+        <linearGradient id="skyNight" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#171029"/><stop offset="100%" stopColor="#241c3d"/></linearGradient>
+        <linearGradient id="seaNight" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#1a1430"/><stop offset="100%" stopColor="#0d0a1a"/></linearGradient>
+        <radialGradient id="moonNight" cx="45%" cy="45%" r="60%"><stop offset="0%" stopColor="#eef2ff"/><stop offset="60%" stopColor="#c3cdf0"/><stop offset="100%" stopColor="#8fa3d9"/></radialGradient>
+        <radialGradient id="glowNight" cx="50%" cy="50%" r="55%"><stop offset="0%" stopColor="#8fa3d9" stopOpacity=".4"/><stop offset="100%" stopColor="#8fa3d9" stopOpacity="0"/></radialGradient>
+      </defs>
+      <rect width="40" height="19" fill="url(#skyNight)"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaNight)"/>
+      <circle cx="10" cy="9" r=".7" fill="#eef2ff" opacity=".8"/>
+      <circle cx="30" cy="6" r=".55" fill="#eef2ff" opacity=".6"/>
+      <circle cx="33" cy="13" r=".6" fill="#eef2ff" opacity=".7"/>
+      <circle cx="7" cy="14" r=".5" fill="#eef2ff" opacity=".5"/>
+      <circle cx="21" cy="16" r="10" fill="url(#glowNight)"/>
+      <circle cx="21" cy="16" r="6.5" fill="url(#moonNight)"/>
+      <circle cx="18.3" cy="13.7" r="6" fill="#171029"/>
+      <rect x="0" y="19" width="40" height="21" fill="url(#seaNight)" opacity=".5"/>
+      <rect x="0" y="18.4" width="40" height="1" fill="#3a3560" opacity=".7"/>
+      <ellipse cx="21" cy="23.5" rx="7" ry=".85" fill="#8fa3d9" opacity=".4"/>
+      <ellipse cx="19.5" cy="26.5" rx="4.5" ry=".65" fill="#8fa3d9" opacity=".3"/>
+      <ellipse cx="21.5" cy="29" rx="5" ry=".55" fill="#8fa3d9" opacity=".2"/>
+      <ellipse cx="20" cy="31.5" rx="3" ry=".45" fill="#8fa3d9" opacity=".13"/>
+    </svg>
+  )
 }
 
 export default function HomePage() {
@@ -58,6 +152,8 @@ export default function HomePage() {
   const [sparks,      setSparks]      = useState([])
   const [nurAnim,     setNurAnim]     = useState(false)
   const [sharingVerse,  setSharingVerse]  = useState(false)
+  const [showSearch,    setShowSearch]    = useState(false)
+  const [contentTab,    setContentTab]    = useState('verse') // 'verse' | 'hadith' — переключатель Аят/Хадис дня
   const [sharingHadith, setSharingHadith] = useState(false)
   const [donePrayers, setDonePrayers] = useState(new Set())
   const [weekDone,    setWeekDone]    = useState([])  // bool[7] Пн..Вс текущей недели
@@ -67,6 +163,7 @@ export default function HomePage() {
   const [showAdhkar,      setShowAdhkar]      = useState(false)
   const [showPath,        setShowPath]        = useState(false)
   const [showMuslimPath,  setShowMuslimPath]  = useState(false)
+  const [showBeginnerHint, setShowBeginnerHint] = useState(shouldShowBeginnerHint)
   const [hadithNurAnim,   setHadithNurAnim]   = useState(false)
   const [hadithLiked,     setHadithLiked]     = useState(() => {
     try {
@@ -93,6 +190,9 @@ export default function HomePage() {
   useEffect(() => {
     if (profile?.nur != null && pendingNurRef.current === 0) setNurDisplay(profile.nur)
   }, [profile?.nur])
+  useEffect(() => {
+    if (user?.id) trackEvent('home_view', {}, user.id)
+  }, [user?.id])
   useEffect(() => {
     // Прибавляем дельту к текущему отображаемому значению (а не к profile.nur,
     // который может быть устаревшим если несколько начислений идут подряд —
@@ -392,6 +492,7 @@ export default function HomePage() {
   }
 
   const motiv = getMotivMessage()
+  const greeting = getGreeting()
 
   return (
     <div style={s.page}>
@@ -405,13 +506,22 @@ export default function HomePage() {
         {/* ── Шапка ── */}
         <div style={s.header}>
           <div style={s.headerLeft}>
-            <div style={s.greeting}>{getGreeting().text},</div>
-            <div style={s.name}>{name} <span style={s.moon}>{getGreeting().icon}</span></div>
+            <div style={s.greeting}>{greeting.text},</div>
+            <div style={s.name}>{name} <span style={s.moon}><GreetingIcon period={greeting.period} /></span></div>
           </div>
           <div style={s.headerRight}>
+            {/* Поиск */}
+            <button style={s.searchBtn} onClick={() => setShowSearch(true)} aria-label="Поиск по приложению">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2.4" strokeLinecap="round">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="21" y1="21" x2="16.2" y2="16.2" />
+              </svg>
+            </button>
             {/* Нур */}
             <div style={s.nurBadge}>
-              <span style={s.nurIcon}>◉</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--gold)">
+                <path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z" />
+              </svg>
               <span style={s.nurVal}>{nur}</span>
             </div>
             {/* Стрик */}
@@ -422,9 +532,31 @@ export default function HomePage() {
           </div>
         </div>
 
-        {/* ── Аят дня ── */}
-        <div style={s.sectionLabel}>Аят дня</div>
+        {showSearch && (
+          <Suspense fallback={null}>
+            <AppSearch onClose={() => setShowSearch(false)} />
+          </Suspense>
+        )}
 
+        <EidHomeBanner />
+
+        {/* ── Аят дня / Хадис дня — переключатель ── */}
+        <div style={s.contentTabs}>
+          <button
+            style={{ ...s.contentTab, ...(contentTab === 'verse' ? s.contentTabActive : {}) }}
+            onClick={() => setContentTab('verse')}
+          >
+            Аят дня
+          </button>
+          <button
+            style={{ ...s.contentTab, ...(contentTab === 'hadith' ? s.contentTabActive : {}) }}
+            onClick={() => setContentTab('hadith')}
+          >
+            Хадис дня
+          </button>
+        </div>
+
+        {contentTab === 'verse' ? (
         <div style={{ ...s.ayatCard, borderColor: dayTheme.color + '40' }}>
           {/* Глоу */}
           <div style={{ ...s.ayatGlow, background: dayTheme.color + '18' }} />
@@ -488,9 +620,7 @@ export default function HomePage() {
             </button>
           </div>
         </div>
-
-        {/* ── Хадис дня ── */}
-        <div style={s.sectionLabel}>Хадис дня</div>
+        ) : (
         <div style={s.hadithCard}>
           <div style={s.hadithQuote}>"</div>
           <div style={s.hadithAr} className="gold-shimmer">{hadith.ar}</div>
@@ -518,10 +648,11 @@ export default function HomePage() {
             </button>
           </div>
         </div>
+        )}
 
-        {/* ── Намазы сегодня ── */}
+        {/* ── Намазы сегодня (+ мотивация капшеном) ── */}
         <div style={s.sectionLabel}>Намазы сегодня</div>
-        <div style={s.prayersCard}>
+        <div style={s.prayersCardPrimary}>
           <div style={s.prayersRow}>
             {PRAYER_NAMES.map(p => {
               const done = donePrayers.has(p)
@@ -539,12 +670,10 @@ export default function HomePage() {
             <span style={{ color:'var(--gold)', fontWeight:700 }}>{donePrayers.size}</span>
             <span style={{ color:'var(--text-muted)' }}> из 5 совершено</span>
           </div>
-        </div>
-
-        {/* ── Мотивация ── */}
-        <div style={{ ...s.motivCard, borderColor: motiv.color + '40', background: motiv.color + '0d' }}>
-          <span style={{ fontSize: 22, flexShrink: 0 }}>{motiv.icon}</span>
-          <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.6 }}>{motiv.text}</div>
+          <div style={s.motivCaption}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>{motiv.icon}</span>
+            <span style={{ color: 'var(--text-muted)' }}>{motiv.text}</span>
+          </div>
         </div>
 
         {/* ── Серия дней ── */}
@@ -631,6 +760,14 @@ export default function HomePage() {
                 level={level}
                 onOpen={() => setShowMuslimPath(true)}
               />
+              {showBeginnerHint && (
+                <div style={{ marginTop: 10 }}>
+                  <BeginnerPathHintCard
+                    onOpen={() => setShowPath(true)}
+                    onHide={() => setShowBeginnerHint(false)}
+                  />
+                </div>
+              )}
             </>
           )
         })()}
@@ -650,7 +787,10 @@ export default function HomePage() {
           onClose={() => setShowMuslimPath(false)}
           onOpenPrayer={() => { setShowMuslimPath(false); navigate('/prayer') }}
           onOpenQuran={()  => { setShowMuslimPath(false); navigate('/quran') }}
-          onContinueQuran={suraId => { setShowMuslimPath(false); navigate(`/quran/${suraId}`) }}
+          onContinueQuran={(suraId, ayah) => {
+            setShowMuslimPath(false)
+            navigate(`/quran/${suraId}`, ayah ? { state: { scrollToAyah: ayah } } : undefined)
+          }}
         />
       )}
 
@@ -713,8 +853,12 @@ const s = {
   headerLeft: { display:'flex', flexDirection:'column', gap:2 },
   greeting: { fontSize:13, color:'var(--text-muted)' },
   name: { fontSize:22, fontWeight:700, color:'var(--text)' },
-  moon: { fontSize:18 },
+  moon: { display:'inline-flex', verticalAlign:'middle' },
   headerRight: { display:'flex', gap:8, alignItems:'center', paddingTop:4 },
+  searchBtn: {
+    width:34, height:34, borderRadius:17, display:'flex', alignItems:'center', justifyContent:'center',
+    background:'var(--bg-card)', border:'1px solid rgba(201,168,76,.2)', fontSize:15, cursor:'pointer', outline:'none',
+  },
   nurBadge: {
     display:'flex', alignItems:'center', gap:5,
     background:'var(--bg-card)', border:'1px solid rgba(201,168,76,.2)',
@@ -827,6 +971,22 @@ const s = {
     marginTop:22, marginBottom:10
   },
 
+  // Переключатель Аят дня / Хадис дня — тот же стиль подчёркивания,
+  // что и вкладки Профиль/Настройки в ProfilePage (tabBar/tabBtn)
+  contentTabs: {
+    display:'flex', gap:22, marginTop:22, marginBottom:12,
+    borderBottom:'1px solid var(--border)',
+  },
+  contentTab: {
+    padding:'0 0 10px', fontSize:14, fontWeight:600,
+    background:'none', border:'none', borderBottom:'2px solid transparent',
+    color:'var(--text-muted)', cursor:'pointer', outline:'none',
+    fontFamily:'var(--font-ui)', transition:'color .2s',
+  },
+  contentTabActive: {
+    color:'var(--gold)', borderBottomColor:'var(--gold)',
+  },
+
   // Ayat card
   ayatCard: {
     background:'var(--bg-card)', borderRadius:'var(--radius-xl)',
@@ -933,6 +1093,20 @@ const s = {
     background:'var(--bg-card)', borderRadius:'var(--radius-xl)',
     border:'1px solid var(--border)', padding:'16px 20px',
     display:'flex', flexDirection:'column', gap:12
+  },
+  // Тёплый акцент — это главная карточка действия дня (в отличие от
+  // read-only Аят/Хадис), поэтому выделена гораздо заметнее остальных
+  prayersCardPrimary: {
+    background:'linear-gradient(135deg,rgba(201,168,76,.1),rgba(201,168,76,.03))',
+    borderRadius:'var(--radius-xl)',
+    border:'1.5px solid rgba(201,168,76,.3)', padding:'16px 20px',
+    display:'flex', flexDirection:'column', gap:12,
+    boxShadow:'0 0 24px rgba(201,168,76,.08)',
+  },
+  motivCaption: {
+    display:'flex', alignItems:'flex-start', gap:8,
+    borderTop:'1px solid rgba(255,255,255,.08)', paddingTop:10,
+    fontSize:13, lineHeight:1.6,
   },
   prayersRow: { display:'flex', justifyContent:'space-between' },
   prayerDot:  { display:'flex', flexDirection:'column', alignItems:'center', gap:6 },

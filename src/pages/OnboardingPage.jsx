@@ -1,12 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { supabase } from '../supabase/client'
+import { trackEvent } from '../utils/analytics'
 import OnboardStep1 from '../components/onboarding/OnboardStep1'
-import OnboardStep2 from '../components/onboarding/OnboardStep2'
-import OnboardStep3 from '../components/onboarding/OnboardStep3'
-import OnboardStep4 from '../components/onboarding/OnboardStep4'
-import OnboardStep5 from '../components/onboarding/OnboardStep5'
+import OnboardFeatureStep from '../components/onboarding/OnboardFeatureStep'
 import OnboardStep6 from '../components/onboarding/OnboardStep6'
 
 const STEPS = 6
@@ -16,6 +14,10 @@ export default function OnboardingPage() {
   const { user, profile, setProfile } = useAuth()
   const [step,  setStep]  = useState(1)
   const [level, setLevel] = useState(profile?.level || 'seeker')
+
+  const isAuthed = !!user
+
+  useEffect(() => { trackEvent('onboarding_step_view', { step, authed: isAuthed }, user?.id) }, [step, user?.id])
 
   const next = () => setStep(s => Math.min(s + 1, STEPS))
 
@@ -27,16 +29,28 @@ export default function OnboardingPage() {
     }
   }
 
-  async function finish() {
+  // Авторизованный юзер — старый флоу (аккаунт уже есть, просто отмечаем онбординг пройденным).
+  // Анонимный юзер — новый флоу (онбординг до регистрации): выбор уровня кладём в
+  // localStorage и передаём эстафету AuthPage, она создаст профиль уже onboarded:true.
+  async function completeOnboarding(skipped) {
     if (user) {
       await Promise.race([
         supabase.from('profiles').update({ onboarded: true }).eq('id', user.id),
         new Promise(r => setTimeout(r, 5000))
       ])
       setProfile(p => ({ ...p, onboarded: true }))
+    } else {
+      try {
+        localStorage.setItem('pending_level', level)
+        localStorage.setItem('onboarding_seen', '1')
+      } catch {}
     }
-    navigate('/home')
+    trackEvent(skipped ? 'onboarding_skipped' : 'onboarding_completed', { level, at_step: step }, user?.id)
+    navigate(user ? '/home' : '/auth')
   }
+
+  const finish = () => completeOnboarding(false)
+  const skip   = () => completeOnboarding(true)
 
   const userName = profile?.name || ''
 
@@ -49,6 +63,9 @@ export default function OnboardingPage() {
       <div style={s.header}>
         <div style={s.logoRow}>
           <span style={s.logoAr}>نور حياة</span>
+          {step < STEPS && (
+            <button style={s.skipBtn} onClick={skip}>Пропустить</button>
+          )}
         </div>
         <div style={s.progressWrap}>
           <div style={s.progressBar}>
@@ -60,12 +77,9 @@ export default function OnboardingPage() {
 
       {/* Step content */}
       <div style={s.content} key={step}>
-        {step === 1 && <OnboardStep1 onNext={next} userName={userName} />}
-        {step === 2 && <OnboardStep2 onNext={next} level={level} onLevelChange={handleLevelChange} />}
-        {step === 3 && <OnboardStep3 onNext={next} level={level} />}
-        {step === 4 && <OnboardStep4 onNext={next} />}
-        {step === 5 && <OnboardStep5 onNext={next} />}
-        {step === 6 && <OnboardStep6 onFinish={finish} userName={userName} level={level} />}
+        {step === 1 && <OnboardStep1 onNext={next} userName={userName} level={level} onLevelChange={handleLevelChange} />}
+        {step >= 2 && step <= 5 && <OnboardFeatureStep onNext={next} level={level} screenIndex={step - 2} />}
+        {step === 6 && <OnboardStep6 onFinish={finish} isAuthed={isAuthed} />}
       </div>
 
       <style>{`
@@ -76,14 +90,6 @@ export default function OnboardingPage() {
         @keyframes orbFloat {
           0%,100% { transform:translate(0,0); }
           50% { transform:translate(8px,-12px); }
-        }
-        @keyframes starPulse {
-          0%,100% { opacity:.4; transform:scale(1); }
-          50% { opacity:1; transform:scale(1.3); }
-        }
-        @keyframes fadeUp {
-          from { opacity:0; transform:translateY(18px); }
-          to   { opacity:1; transform:translateY(0); }
         }
       `}</style>
     </div>
@@ -109,7 +115,11 @@ const s = {
     padding: '0 20px', display: 'flex', flexDirection: 'column', gap: 12,
     flexShrink: 0, zIndex: 1,
   },
-  logoRow: { display: 'flex', alignItems: 'center' },
+  logoRow: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
+  skipBtn: {
+    background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 12,
+    padding: '4px 6px', cursor: 'pointer', opacity: 0.55,
+  },
   logoAr: {
     fontFamily: "'Scheherazade New', serif",
     fontSize: 24, color: 'var(--gold)',

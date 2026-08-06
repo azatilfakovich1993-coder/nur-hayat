@@ -8,6 +8,30 @@ import { Capacitor } from '@capacitor/core'
 import { Filesystem, Directory } from '@capacitor/filesystem'
 import { Share } from '@capacitor/share'
 
+// ── Кликабельные ссылки и email внутри текста сообщения ─────────
+const LINK_RE = /(https?:\/\/[^\s]+|[\w.+-]+@[\w-]+\.[a-zA-Z]{2,})/g
+function linkify(text, isMe) {
+  const parts = text.split(LINK_RE)
+  const color = isMe ? '#1a4a8a' : '#6ab0ff'
+  return parts.map((part, i) => {
+    if (!LINK_RE.test(part)) { LINK_RE.lastIndex = 0; return part }
+    LINK_RE.lastIndex = 0
+    const isEmail = part.includes('@') && !part.startsWith('http')
+    // Отделяем случайную пунктуацию на конце ссылки от самого адреса
+    const trailMatch = part.match(/[.,!?;:)\]]+$/)
+    const trail = trailMatch ? trailMatch[0] : ''
+    const url = trail ? part.slice(0, -trail.length) : part
+    return (
+      <span key={i}>
+        <a href={isEmail ? `mailto:${url}` : url} target="_blank" rel="noopener noreferrer"
+          className="chat-link"
+          style={{ color, fontWeight:600, textDecoration:'underline' }}
+          onClick={e => e.stopPropagation()}>{url}</a>{trail}
+      </span>
+    )
+  })
+}
+
 // ── Анимированные эмодзи (Google Noto Animated) ───────────────
 // Конвертация символа в hex-код для URL
 function emojiHex(emoji) {
@@ -274,6 +298,7 @@ export default function ChatPage() {
   const [genderBlocked, setGenderBlocked] = useState(false)
   const [replyTo,    setReplyTo]    = useState(null)  // { id, name, text }
   const [menuMsg,    setMenuMsg]    = useState(null)  // сообщение с открытым меню
+  const [selectModeId, setSelectModeId] = useState(null) // id сообщения, где включено выделение текста
   const [confirmDeleteId, setConfirmDeleteId] = useState(null) // id сообщения, ожидающего подтверждения удаления
   const [viewerUrl,  setViewerUrl]  = useState(null)  // открытое во весь экран фото
   const [highlightId, setHighlightId] = useState(null)
@@ -980,6 +1005,8 @@ export default function ChatPage() {
                     menuOpen={menuMsg?.id === msg.id}
                     onMenu={() => setMenuMsg(msg)}
                     onCloseMenu={() => setMenuMsg(null)}
+                    selectMode={selectModeId === msg.id}
+                    onExitSelectMode={() => setSelectModeId(null)}
                     onReply={handleReply}
                     onDelete={deleteMessage}
                     onReaction={toggleReaction}
@@ -1126,6 +1153,7 @@ export default function ChatPage() {
           onReply={() => handleReply(menuMsg)}
           onDelete={() => setConfirmDeleteId(menuMsg.id)}
           onReaction={e => toggleReaction(menuMsg.id, e)}
+          onSelectMode={() => setSelectModeId(menuMsg.id)}
           onClose={() => setMenuMsg(null)}
         />
       )}
@@ -1158,6 +1186,7 @@ export default function ChatPage() {
         }
         .emoji-btn:hover { transform: scale(1.3) !important; background: rgba(201,168,76,.12) !important; }
         .emoji-btn:active { animation: emojiBounce .3s ease !important; }
+        .chat-link:active { opacity: .5; }
       `}</style>
     </div>
   )
@@ -1208,7 +1237,7 @@ function Avatar({ src, letter, style }) {
   )
 }
 
-function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry, replyToTime, onJumpToReply, onOpenImage }) {
+function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverride, menuOpen, onMenu, onCloseMenu, onReply, onDelete, onReaction, onRetry, replyToTime, onJumpToReply, onOpenImage, selectMode, onExitSelectMode }) {
   const letter  = msg.user_name?.charAt(0).toUpperCase() || '?'
   // Если профиль загружен (avatarSrcOverride !== undefined) — используем только его значение.
   // Это гарантирует что удалённый аватар не показывается из старых сообщений.
@@ -1230,6 +1259,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
   }
 
   function handlePressStart(e) {
+    if (selectMode) return // в режиме выделения — долгое нажатие должно запускать нативное выделение текста, а не наше меню
     const t = e.touches?.[0]
     pressStartXY.current = { x: t?.clientX ?? 0, y: t?.clientY ?? 0 }
     pressTimer.current = setTimeout(() => { tapFeedback(); onMenu() }, 500)
@@ -1297,7 +1327,7 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
       )}
       {/* Текст */}
       {msg.content && !(msg.file_type === 'image' || msg.file_type === 'video' || msg.file_type === 'voice' || msg.file_type === 'audio') && (
-        <div style={{ ...b.text, color: isMe ? '#070710' : 'var(--text)' }}>{msg.content}</div>
+        <div style={{ ...b.text, color: isMe ? '#070710' : 'var(--text)', userSelect:'text' }}>{linkify(msg.content, isMe)}</div>
       )}
       <div style={{ ...b.time, color: isMe ? 'rgba(7,7,16,.45)' : 'var(--text-dim)', textAlign:'right', display:'flex', alignItems:'center', justifyContent:'flex-end', gap:2 }}>
         {formatTime(msg.created_at)}
@@ -1355,13 +1385,16 @@ function MessageBubble({ msg, isMe, showName, userId, lastReadAt, avatarSrcOverr
         )}
 
         <div
-          style={{ ...(isMe ? b.bubbleMe : b.bubbleThem), cursor:'pointer', userSelect:'none', opacity: msg.failed ? 0.6 : 1 }}
+          style={{ ...(isMe ? b.bubbleMe : b.bubbleThem), cursor:'pointer', userSelect: selectMode ? 'text' : 'none', opacity: msg.failed ? 0.6 : 1, ...(selectMode ? { outline:'2px solid var(--gold)', outlineOffset:2 } : {}) }}
           onTouchStart={handlePressStart} onTouchEnd={handlePressEnd}
-          onContextMenu={e => { e.preventDefault(); onMenu() }}
+          onContextMenu={e => { if (selectMode) return; e.preventDefault(); onMenu() }}
           onClick={() => { if (msg.failed) onRetry?.(msg) }}
         >
           {bubbleContent}
         </div>
+        {selectMode && (
+          <button style={b.doneSelectBtn} onClick={onExitSelectMode}>✓ Готово, выйти из выделения</button>
+        )}
         {msg.failed && (
           <div style={{ ...b.time, color: '#ff5f5f', textAlign: isMe ? 'right' : 'left', paddingRight: 8, paddingLeft: 8 }}>
             Не доставлено · нажмите для повтора
@@ -1484,7 +1517,7 @@ async function downloadFile(url, fileName) {
   }
 }
 
-function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onClose }) {
+function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onSelectMode, onClose }) {
   const [showAllReactions, setShowAllReactions] = useState(false)
 
   function handleReaction(e) { onReaction(e); onClose() }
@@ -1526,6 +1559,13 @@ function MsgContextMenu({ isMe, msg, onReply, onDelete, onReaction, onClose }) {
           <button style={sh.item} onClick={() => { copyToClipboard(msg.content); onClose() }}>
             <span style={sh.itemIcon}>📋</span>
             <span style={sh.itemLabel}>Копировать</span>
+          </button>
+        )}
+
+        {msg?.content && !msg?.file_type && (
+          <button style={sh.item} onClick={() => { onSelectMode(); onClose() }}>
+            <span style={sh.itemIcon}>✏️</span>
+            <span style={sh.itemLabel}>Выделить текст</span>
           </button>
         )}
 
@@ -1690,6 +1730,11 @@ const s = {
 
 const b = {
   row: { display:'flex', gap:8, alignItems:'flex-end' },
+  doneSelectBtn: {
+    marginTop:6, fontSize:12, fontWeight:600, color:'#070710',
+    background:'var(--gold)', border:'none', borderRadius:20,
+    padding:'6px 14px', cursor:'pointer', outline:'none', fontFamily:'var(--font-ui)',
+  },
   avatarOther: {
     width:32, height:32, borderRadius:'50%', flexShrink:0,
     background:'linear-gradient(135deg,rgba(201,168,76,.25),rgba(201,168,76,.1))',

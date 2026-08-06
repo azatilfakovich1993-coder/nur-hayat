@@ -35,11 +35,26 @@ serve(async (req) => {
 
   const { data: schedules, error: schedulesErr } = await supabase
     .from('prayer_schedules')
-    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time')
+    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled')
 
   if (schedulesErr) console.error('[check-prayers] schedules query failed:', schedulesErr)
   if (!schedules?.length) {
     return new Response(JSON.stringify({ sent: 0, checked: 0 }))
+  }
+
+  const todayStr = now.toISOString().slice(0, 10)
+
+  // Идемпотентность: без этого одно и то же событие (напр. "20 мин до Фаджра")
+  // уходило до 5 раз подряд, пока держится 5-минутное окно ниже — сколько бы
+  // раз за это окно ни дёрнул функцию внешний cron. claim() отправляет только
+  // тому, кто первым "застолбил" tag на сегодня.
+  async function claim(userId: string, tag: string): Promise<boolean> {
+    const { data, error } = await supabase
+      .from('notif_log')
+      .upsert({ user_id: userId, tag, sent_on: todayStr }, { onConflict: 'user_id,tag,sent_on', ignoreDuplicates: true })
+      .select()
+    if (error) { console.error('[check-prayers] claim failed:', error.message); return true }
+    return (data?.length ?? 0) > 0
   }
 
   // Android-приложение регистрирует "сырой" FCM-токен (platform='android'),
@@ -75,8 +90,12 @@ serve(async (req) => {
   let sent = 0
 
   for (const schedule of schedules) {
+    // Ошибка на одном пользователе (например, кривые timings) раньше рушила
+    // весь прогон — все следующие пользователи (и азкары этого же
+    // пользователя, они идут в коде ниже намазов) молча не обрабатывались.
+    try {
     const { user_id, timings, remind_before, utc_offset,
-            prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time } = schedule
+            prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled } = schedule
 
     const { data: tokens } = await supabase
       .from('push_tokens')
@@ -97,24 +116,28 @@ serve(async (req) => {
         // За X минут до намаза
         for (const remindMin of remind_before as number[]) {
           const notifyAt = prayerUtcMin - remindMin
-          if (nowUtcMin >= notifyAt && nowUtcMin < notifyAt + 5) {
+          const tag = `prayer-${prayerId}-${remindMin}`
+          // Окно шире, чем интервал cron (5 мин) — с запасом на задержку
+          // самого вызова. claim() всё равно не даст отправить дважды.
+          if (nowUtcMin >= notifyAt && nowUtcMin < notifyAt + 10 && await claim(user_id, tag)) {
             const payload = {
               title: `🔔 До ${name} — ${remindMin} мин`,
               body:  `Намаз в ${(localTimeStr as string).slice(0, 5)}`,
               url:   '/prayer',
-              tag:   `prayer-${prayerId}-${remindMin}`,
+              tag,
             }
             sent += await sendToUser(user_id, payload, tokens)
           }
         }
 
         // В момент намаза
-        if (nowUtcMin >= prayerUtcMin && nowUtcMin < prayerUtcMin + 5) {
+        const atTimeTag = `prayer-${prayerId}-0`
+        if (nowUtcMin >= prayerUtcMin && nowUtcMin < prayerUtcMin + 10 && await claim(user_id, atTimeTag)) {
           const payload = {
             title: `🕌 Время ${name}!`,
             body:  'Настало время намаза',
             url:   '/prayer',
-            tag:   `prayer-${prayerId}-0`,
+            tag:   atTimeTag,
           }
           sent += await sendToUser(user_id, payload, tokens)
         }
@@ -122,10 +145,10 @@ serve(async (req) => {
     }
 
     // ── Утренние азкары ──────────────────────────────────────
-    if (morning_adhkar_time) {
+    if (morning_adhkar_time && azkar_notif_enabled !== false) {
       const [mh, mm] = (morning_adhkar_time as string).split(':').map(Number)
       const morningUtcMin = mh * 60 + mm - (utc_offset as number)
-      if (nowUtcMin >= morningUtcMin && nowUtcMin < morningUtcMin + 5) {
+      if (nowUtcMin >= morningUtcMin && nowUtcMin < morningUtcMin + 10 && await claim(user_id, 'adhkar-morning')) {
         const payload = {
           title: '🌅 Утренние азкары',
           body:  'Время для утренних зикров — начни день с поминания Аллаха',
@@ -137,10 +160,10 @@ serve(async (req) => {
     }
 
     // ── Вечерние азкары ──────────────────────────────────────
-    if (evening_adhkar_time) {
+    if (evening_adhkar_time && azkar_notif_enabled !== false) {
       const [eh, em] = (evening_adhkar_time as string).split(':').map(Number)
       const eveningUtcMin = eh * 60 + em - (utc_offset as number)
-      if (nowUtcMin >= eveningUtcMin && nowUtcMin < eveningUtcMin + 5) {
+      if (nowUtcMin >= eveningUtcMin && nowUtcMin < eveningUtcMin + 10 && await claim(user_id, 'adhkar-evening')) {
         const payload = {
           title: '🌆 Вечерние азкары',
           body:  'Время для вечерних зикров — заверши день словами благодарности',
@@ -149,6 +172,9 @@ serve(async (req) => {
         }
         sent += await sendToUser(user_id, payload, tokens)
       }
+    }
+    } catch (err) {
+      console.error('[check-prayers] failed for user', schedule.user_id, err)
     }
   }
 

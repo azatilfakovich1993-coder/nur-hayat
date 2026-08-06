@@ -6,6 +6,10 @@ export default function QuranPage({ onTabChange }) {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all') // all | mecca | medina
+  const [continueReading] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('quran_last_read') || 'null') }
+    catch { return null }
+  })
 
   const filtered = useMemo(() => {
     let list = SURAS
@@ -37,6 +41,25 @@ export default function QuranPage({ onTabChange }) {
         </div>
         <div style={s.meta}>{SURAS.length} сур · 6 236 аятов</div>
       </div>
+
+      {/* ── Продолжить чтение ── */}
+      {continueReading && (
+        <button
+          style={s.continueCard}
+          onClick={() => navigate(`/quran/${continueReading.suraId}`, continueReading.ayah ? { state: { scrollToAyah: continueReading.ayah } } : undefined)}
+        >
+          <div style={s.continueIconWrap}>
+            <span style={{ fontSize: 24 }}>📖</span>
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={s.continueTitle}>Продолжить чтение</div>
+            <div style={s.continueSub}>
+              {continueReading.ru}{continueReading.ayah ? ` · аят ${continueReading.ayah}` : ''}
+            </div>
+          </div>
+          <span style={{ fontSize: 24, color: 'var(--gold)', flexShrink: 0 }}>›</span>
+        </button>
+      )}
 
       {/* ── Поиск ── */}
       <div style={s.searchWrap}>
@@ -154,6 +177,23 @@ const s = {
   },
   titleRu: { fontSize: 16, fontWeight: 600, color: 'var(--text)' },
   meta: { fontSize: 12, color: 'var(--text-muted)' },
+
+  continueCard: {
+    margin: '14px 16px 0', display: 'flex', alignItems: 'center', gap: 14,
+    background: 'linear-gradient(135deg,rgba(201,168,76,.18),rgba(201,168,76,.05))',
+    border: '1.5px solid rgba(201,168,76,.45)', borderRadius: 20,
+    padding: '14px 16px', cursor: 'pointer', outline: 'none', textAlign: 'left',
+    fontFamily: 'var(--font-ui)', flexShrink: 0,
+    boxShadow: '0 0 24px rgba(201,168,76,.15)',
+  },
+  continueIconWrap: {
+    width: 48, height: 48, borderRadius: 14, flexShrink: 0,
+    background: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    boxShadow: '0 0 16px rgba(201,168,76,.5), 0 2px 8px rgba(0,0,0,.3)',
+  },
+  continueTitle: { fontSize: 15, fontWeight: 700, color: 'var(--gold)' },
+  continueSub: { fontSize: 12, color: 'var(--text-muted)', marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
 
   searchWrap: {
     margin: '14px 16px 0',

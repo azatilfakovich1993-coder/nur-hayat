@@ -73,7 +73,9 @@ self.addEventListener('push', event => {
       badge:    '/icons/icon-192.png',
       data:     { url: url || '/chat' },
       tag:      tag || 'nur-hayat',
-      renotify: true,
+      // false: повторная доставка с тем же tag тихо заменяет старое
+      // уведомление вместо повторного звука/вибрации на каждый дубль
+      renotify: false,
     })
   )
 })

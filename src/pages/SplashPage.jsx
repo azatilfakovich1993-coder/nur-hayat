@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
+import { nextAuthRoute } from '../utils/nextAuthRoute'
 
 export default function SplashPage() {
   const navigate = useNavigate()
@@ -24,7 +25,7 @@ export default function SplashPage() {
   useEffect(() => {
     if (!minTimeDone || loading) return
     setPhase(3)
-    const t = setTimeout(() => navigate(user ? '/home' : '/auth', { replace: true }), 800)
+    const t = setTimeout(() => navigate(nextAuthRoute(!!user), { replace: true }), 800)
     return () => clearTimeout(t)
   }, [minTimeDone, loading, user, navigate])
 
@@ -36,7 +37,7 @@ export default function SplashPage() {
         hasUser = !!(raw && JSON.parse(raw)?.user)
       } catch {}
       setPhase(3)
-      navigate(hasUser || user ? '/home' : '/auth', { replace: true })
+      navigate(nextAuthRoute(hasUser || !!user), { replace: true })
     }, 5000)
     return () => clearTimeout(force)
   }, [user, navigate])

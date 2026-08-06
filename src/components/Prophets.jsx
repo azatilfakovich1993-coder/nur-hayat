@@ -1,10 +1,16 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
 import { PROPHETS } from '../data/prophets'
+import QandAQuiz from './QandAQuiz'
 
 export default function Prophets({ onClose }) {
   const swipe    = useSwipeDown(onClose)
   const [selected, setSelected] = useState(null)
+  const [showQuiz, setShowQuiz] = useState(false)
+
+  if (showQuiz) {
+    return <QandAQuiz category="Пророки" onClose={() => setShowQuiz(false)} />
+  }
 
   if (selected) {
     return <ProphetDetail prophet={selected} onBack={() => setSelected(null)} onClose={onClose} />
@@ -43,6 +49,15 @@ export default function Prophets({ onClose }) {
           </button>
         ))}
 
+        <button style={s.quizCard} onClick={() => setShowQuiz(true)}>
+          <span style={s.quizIcon}>🎯</span>
+          <span style={s.quizBody}>
+            <span style={s.quizTitle}>Проверь себя</span>
+            <span style={s.quizSub}>Квиз по историям пророков</span>
+          </span>
+          <span style={s.arrow}>›</span>
+        </button>
+
         <div style={s.source}>
           <div style={s.sourceText}>
             Все сведения взяты из Корана и достоверных хадисов. Спорные и слабые предания исключены.
@@ -57,6 +72,7 @@ export default function Prophets({ onClose }) {
 
 function ProphetDetail({ prophet: p, onBack, onClose }) {
   const [openSection, setOpenSection] = useState(0)
+  const swipe = useSwipeDown(onClose)
 
   return (
     <div style={s.wrap} {...swipe}>
@@ -168,6 +184,17 @@ const s = {
   cardTitle: { fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.3 },
   cardShort: { fontSize: 13, color: 'var(--text)', lineHeight: 1.5, marginTop: 2 },
   arrow:     { fontSize: 22, color: 'rgba(255,255,255,.2)', flexShrink: 0, alignSelf: 'center' },
+
+  quizCard: {
+    width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+    borderRadius: 18, border: '1px solid rgba(160,125,232,.4)',
+    background: 'linear-gradient(135deg,rgba(160,125,232,.15),rgba(160,125,232,.05))',
+    padding: '14px 16px', cursor: 'pointer', outline: 'none', textAlign: 'left', marginTop: 4,
+  },
+  quizIcon:  { fontSize: 24, flexShrink: 0 },
+  quizBody:  { flex: 1, display: 'flex', flexDirection: 'column', gap: 2 },
+  quizTitle: { fontSize: 15, fontWeight: 700, color: '#a07de8' },
+  quizSub:   { fontSize: 12, color: 'var(--text-muted)' },
 
   // Детальный экран
   detail: { flex: 1, overflowY: 'auto', padding: '12px 16px 0', display: 'flex', flexDirection: 'column', gap: 10 },

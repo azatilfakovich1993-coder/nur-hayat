@@ -1,7 +1,13 @@
 import { useState, useRef, useEffect } from 'react'
 import { LETTERS, HARAKAT, MAKHRAJ_GROUPS, LETTER_SOUND } from '../data/arabic-letters'
 import { useAuth } from '../hooks/useAuth'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { addNur } from '../utils/nur'
+import { supabase } from '../supabase/client'
+import { Capacitor } from '@capacitor/core'
+import { Filesystem, Directory } from '@capacitor/filesystem'
+import DawnLandscape from './DawnLandscape'
+import QandAQuiz from './QandAQuiz'
 
 // ─── Audio ─────────────────────────────────────────────────────────────────
 function getTTSUrl(text) {
@@ -9,6 +15,84 @@ function getTTSUrl(text) {
   const q = text.length < 4 ? `${text} ${text} ${text}` : text
   return `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(q)}&tl=ar&client=tw-ob`
 }
+
+// ─── Видео произношения буквы ───────────────────────────────────────────────
+const LETTER_VIDEOS_BUCKET = 'letter-videos'
+
+// ─── Локальный кэш видео на устройстве ──────────────────────────────────────
+// Подписанная ссылка каждый раз новая (с токеном), поэтому обычный HTTP-кэш
+// её не узнаёт и качает видео заново при каждом открытии. Тут сохраняем сам
+// файл на диск телефона один раз — дальше видео играет без интернета.
+const VIDEO_CACHE_DIR = 'letter-videos-cache'
+
+async function getCachedVideoPath(fileName) {
+  if (!Capacitor.isNativePlatform()) return null
+  try {
+    const { uri } = await Filesystem.getUri({ path: `${VIDEO_CACHE_DIR}/${fileName}`, directory: Directory.Cache })
+    // stat бросает исключение если файла нет — getUri его не бросает, поэтому проверяем отдельно
+    await Filesystem.stat({ path: `${VIDEO_CACHE_DIR}/${fileName}`, directory: Directory.Cache })
+    return Capacitor.convertFileSrc(uri)
+  } catch {
+    return null
+  }
+}
+
+async function cacheVideoInBackground(fileName, remoteUrl) {
+  if (!Capacitor.isNativePlatform()) return
+  try {
+    const res = await fetch(remoteUrl)
+    const blob = await res.blob()
+    await Filesystem.writeFile({
+      path: `${VIDEO_CACHE_DIR}/${fileName}`,
+      data: blob,
+      directory: Directory.Cache,
+      recursive: true,
+    })
+  } catch {
+    // Не удалось закэшировать — не критично, просто скачается заново в следующий раз
+  }
+}
+
+async function resolveVideoUrl(storagePath, fileName) {
+  const cached = await getCachedVideoPath(fileName)
+  if (cached) return cached
+
+  const { data } = await supabase.storage.from(LETTER_VIDEOS_BUCKET).createSignedUrl(storagePath, 3600)
+  const remoteUrl = data?.signedUrl ?? null
+  if (remoteUrl) cacheVideoInBackground(fileName, remoteUrl) // не ждём — играем сразу по сети, кэшируем параллельно
+  return remoteUrl
+}
+
+async function getLetterVideoUrl(letterId) {
+  return resolveVideoUrl(`vid/${letterId}.mp4`, `${letterId}.mp4`)
+}
+async function getExtraVideoUrl(name) {
+  return resolveVideoUrl(`vid/extra/${name}.mp4`, `extra_${name}.mp4`)
+}
+
+// ─── Видео сравнения похожих букв — на каких буквах показывать ─────────────
+const SIMILAR_LETTER_GROUPS = [
+  { video: 'extra_sin-tha-sad-compare',  title: 'Разница: Син, Са, Сод',        letters: ['sin', 'tha', 'sad'] },
+  { video: 'extra_ha-kha-ha2-compare',   title: 'Разница: ha, ха, хо',          letters: ['ha1', 'kha', 'ha2'] },
+  { video: 'extra_fa-qaf-kaf-compare',   title: 'Разница: Фа, Каф, Кяф',        letters: ['fa', 'qaf', 'kaf'] },
+  { video: 'extra_dhal-zay-dha-compare', title: 'Разница: Заль, Зей, Зо',       letters: ['dhal', 'zay', 'dha'] },
+  { video: 'extra_multi-letter-compare', title: 'Разница и сходство нескольких букв', letters: ['ba', 'zay', 'ya', 'mim', 'nun', 'ra', 'ta'] },
+]
+function getSimilarGroupsForLetter(letterId) {
+  return SIMILAR_LETTER_GROUPS.filter(g => g.letters.includes(letterId))
+}
+
+// ─── Практика и дополнительно — общие видео не привязанные к одной букве ───
+const PRACTICE_EXTRAS = [
+  { video: 'extra_motivation',        icon: '🔥', title: 'Мотивация к изучению букв' },
+  { video: 'extra_practice-alif-tha', icon: '📝', title: 'Практика: буквы от Алиф до Са' },
+]
+
+// Видео про харакаты — показываются отдельной карточкой сразу под группой "Харакаты"
+const HARAKAT_VIDEOS = [
+  { video: 'extra_harakat-intro',    icon: 'ـَ', title: 'Харакаты и огласовки' },
+  { video: 'extra_harakat-practice', icon: '✅', title: 'Закрепление темы харакатов' },
+]
 
 // ─── Данные глав ──────────────────────────────────────────────────────────
 const CHAPTERS = [
@@ -18,9 +102,7 @@ const CHAPTERS = [
   { id:'kasra',    num:4, icon:'بِ', title:'Кясра',    titleAr:'الكَسْرَة',   sub:'Краткое «и» — بِ تِ ثِ...', color:'#52b788', bg:'rgba(82,183,136,.1)',  border:'rgba(82,183,136,.3)' },
   { id:'damma',    num:5, icon:'بُ', title:'Дамма',    titleAr:'الضَّمَّة',   sub:'Краткое «у» — بُ تُ ثُ...', color:'#6a8fd8', bg:'rgba(106,143,216,.1)', border:'rgba(106,143,216,.3)' },
   { id:'sukun',    num:6, icon:'بْ', title:'Сукун',    titleAr:'السُّكُون',   sub:'Нет гласной — закрытый слог', color:'#e88a5a', bg:'rgba(232,138,90,.1)',  border:'rgba(232,138,90,.3)' },
-  { id:'tanwin',   num:7, icon:'ـٌ', title:'Танвин',   titleAr:'التَّنْوِين', sub:'«ан / ин / ун» — конечный нун', color:'#a07de8', bg:'rgba(160,125,232,.1)', border:'rgba(160,125,232,.3)' },
-  { id:'shadda',   num:8, icon:'بّ', title:'Шадда',    titleAr:'الشَّدَّة',   sub:'Удвоение согласной', color:'#e8c05a', bg:'rgba(232,192,90,.1)',  border:'rgba(232,192,90,.3)' },
-  { id:'madd',     num:9, icon:'ـا', title:'Мадд',     titleAr:'المَدّ',      sub:'Долгие гласные — ا و ي', color:'#e88a5a', bg:'rgba(232,138,90,.1)',  border:'rgba(232,138,90,.3)' },
+  { id:'other-rules', num:7, icon:'ـٌ', title:'Другие правила', titleAr:'قَواعِد أُخرى', sub:'Танвин · Шадда · Мадд', color:'#a07de8', bg:'rgba(160,125,232,.1)', border:'rgba(160,125,232,.3)' },
 ]
 
 const MAKHRAJ_COLOR = {
@@ -29,12 +111,12 @@ const MAKHRAJ_COLOR = {
 
 // Вспомогательные данные для специальных глав
 const SUKUN_EXAMPLES = [
-  { ar:'قُلْ',   tts:'قُلْ',   ru:'куль',  meaning:'Скажи!',         rule:'Лям с суkуном: «ль»' },
-  { ar:'لَمْ',   tts:'لَمْ',   ru:'лям',   meaning:'Не (отрицание)', rule:'Мим с суkуном: «м»' },
-  { ar:'مِنْ',   tts:'مِنْ',   ru:'мин',   meaning:'Из / от',        rule:'Нун с суkуном: «н»' },
-  { ar:'هَلْ',   tts:'هَلْ',   ru:'халь',  meaning:'Разве? / Ли?',   rule:'Лям с суkуном: «ль»' },
-  { ar:'بَلْ',   tts:'بَلْ',   ru:'баль',  meaning:'Но / Напротив',  rule:'Лям с суkуном: «ль»' },
-  { ar:'عَنْ',   tts:'عَنْ',   ru:'ан',    meaning:'О / про',        rule:'Нун с суkуном: «н»' },
+  { ar:'قُلْ',   tts:'قُلْ',   ru:'куль',  meaning:'Скажи!',         rule:'Лям с сукуном: «ль»' },
+  { ar:'لَمْ',   tts:'لَمْ',   ru:'лям',   meaning:'Не (отрицание)', rule:'Мим с сукуном: «м»' },
+  { ar:'مِنْ',   tts:'مِنْ',   ru:'мин',   meaning:'Из / от',        rule:'Нун с сукуном: «н»' },
+  { ar:'هَلْ',   tts:'هَلْ',   ru:'халь',  meaning:'Разве? / Ли?',   rule:'Лям с сукуном: «ль»' },
+  { ar:'بَلْ',   tts:'بَلْ',   ru:'баль',  meaning:'Но / Напротив',  rule:'Лям с сукуном: «ль»' },
+  { ar:'عَنْ',   tts:'عَنْ',   ru:'ан',    meaning:'О / про',        rule:'Нун с сукуном: «н»' },
 ]
 
 const TANWIN_EXAMPLES = [
@@ -83,7 +165,26 @@ export default function QuranAlphabet({ onClose }) {
   const [chapter, setChapter] = useState(null)   // { id, ... }
   const [item,    setItem]    = useState(null)   // letter or syllable object
   const [ttsActive, setTtsActive] = useState(false)
+  const [videoError, setVideoError] = useState(null) // id буквы, для которой видео не загрузилось
+  const [videoWatched, setVideoWatched] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem('alphabet_video_watched') || '[]')) }
+    catch { return new Set() }
+  })
+  const [videoExpanded, setVideoExpanded] = useState(false)
+  const [videoSrc, setVideoSrc] = useState(null) // подписанный URL для текущей буквы
+  const [modalVideo, setModalVideo] = useState(null) // { url, title } | null — для видео сравнения похожих букв и раздела "Практика"
+  const [showQuiz, setShowQuiz] = useState(false)
   const audioRef = useRef(null)
+
+  function markVideoWatched(letterId) {
+    setVideoWatched(prev => {
+      if (prev.has(letterId)) return prev
+      const next = new Set(prev)
+      next.add(letterId)
+      localStorage.setItem('alphabet_video_watched', JSON.stringify([...next]))
+      return next
+    })
+  }
 
   const [listenedLetters, setListenedLetters] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem('alphabet_listened') || '[]')) }
@@ -110,6 +211,7 @@ export default function QuranAlphabet({ onClose }) {
       localStorage.setItem('alphabet_listened', JSON.stringify([...next]))
       if (next.size === LETTERS.length) {
         addNur(10, user, profile, setProfile)
+        setShowQuiz(true)
       }
       return next
     })
@@ -141,6 +243,20 @@ export default function QuranAlphabet({ onClose }) {
   }
 
   useEffect(() => { stopAudio() }, [chapter, item])
+  // При переходе на новую букву всегда сворачиваем видео в компактное превью —
+  // открывается только по явному тапу, не грузится само
+  useEffect(() => {
+    setVideoExpanded(false)
+    setVideoError(null)
+  }, [item])
+  // Подписанная ссылка на видео буквы
+  useEffect(() => {
+    if (!item?.id) { setVideoSrc(null); return }
+    let cancelled = false
+    setVideoSrc(null)
+    getLetterVideoUrl(item.id).then(url => { if (!cancelled) setVideoSrc(url) })
+    return () => { cancelled = true }
+  }, [item])
   useEffect(() => () => stopAudio(), [])
 
   function playAudio(url) {
@@ -164,6 +280,7 @@ export default function QuranAlphabet({ onClose }) {
   }
 
   function back() {
+    if (showQuiz) { setShowQuiz(false); return }
     if (item) {
       // Начисляем +5 НУР за букву алфавита — только первый раз при закрытии
       if (chapter?.id === 'alphabet' && item.id && !viewedLetters.has(item.id)) {
@@ -181,6 +298,12 @@ export default function QuranAlphabet({ onClose }) {
     }
     if (chapter) { setChapter(null); return }
     onClose()
+  }
+
+  useBackHandler(true, back)
+
+  if (showQuiz) {
+    return <QandAQuiz category="Алфавит" onClose={() => setShowQuiz(false)} />
   }
 
   // ── Заголовок ──
@@ -204,8 +327,9 @@ export default function QuranAlphabet({ onClose }) {
       `}</style>
       {/* ── Шапка ── */}
       <div style={s.head}>
-        <button style={s.backBtn} onClick={back}>‹</button>
-        <div style={s.headMid}>
+        {!chapter && !item && <DawnLandscape />}
+        <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={back}>‹</button>
+        <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>
           <div style={s.headTitle}>{headTitle}</div>
           {headSub && <div style={s.headSub}>{headSub}</div>}
         </div>
@@ -221,37 +345,74 @@ export default function QuranAlphabet({ onClose }) {
             <div style={{ marginTop: 8 }}>Арабский алфавит учится по шагам. Сначала знакомишься с буквами — каждая из них согласная. Потом учишь харакаты — маленькие значки над и под буквами, которые добавляют гласные «а», «и», «у». Буква + харакат = слог. Слоги складываются в слова.</div>
             <div style={{ marginTop: 8 }}>Иди по главам по порядку: начни с <b style={{ color:'var(--gold)' }}>Алфавита</b>, затем <b style={{ color:'var(--gold)' }}>Фатха → Кясра → Дамма</b>, и далее.</div>
           </div>
-          {CHAPTERS.map(ch => {
-            const isAlpha = ch.id === 'alphabet'
-            const alphaDone = isAlpha ? LETTERS.filter(l => listenedLetters.has(l.id)).length : 0
-            const alphaPct  = isAlpha ? Math.round((alphaDone / LETTERS.length) * 100) : 0
-            return (
-            <button
-              key={ch.id}
-              style={{ ...s.chapterCard, borderColor: ch.border, background: ch.bg }}
-              onClick={() => handleChapterOpen(ch)}
-            >
-              <div style={{ ...s.chapterNum, borderColor: ch.border, color: ch.color }}>{ch.num}</div>
-              <div style={{ ...s.chapterIcon, color: ch.color }} className="arabic">{ch.icon}</div>
-              <div style={s.chapterText}>
-                <div style={{ ...s.chapterTitle, color: ch.color }}>{ch.title}</div>
-                <div style={{ ...s.chapterTitleAr }} className="arabic">{ch.titleAr}</div>
-                <div style={s.chapterSub}>{ch.sub}</div>
-                {isAlpha && alphaDone > 0 && (
-                  <div style={{ marginTop: 6 }}>
-                    <div style={{ ...s.miniTrack }}>
-                      <div style={{ ...s.miniFill, width: alphaPct + '%', background: ch.color }} />
-                    </div>
-                    <div style={{ fontSize: 10, color: ch.color, marginTop: 3, fontWeight: 600 }}>
-                      {alphaDone}/{LETTERS.length} букв
-                    </div>
-                  </div>
-                )}
+          {[
+            { label: 'Буквы',    hint: 'Начни отсюда — 28 согласных и откуда берётся звук каждой',              ids: ['alphabet', 'makhraj'] },
+            { label: 'Харакаты', hint: 'Значки над/под буквами — превращают буквы в слоги. Проходи после букв', ids: ['fatha', 'kasra', 'damma', 'sukun', 'other-rules'] },
+          ].map(group => (
+            <div key={group.label}>
+              <div style={s.practiceLabel}>{group.label}</div>
+              <div style={s.groupHint}>{group.hint}</div>
+              <div style={s.chapterGrid}>
+                {group.ids.map(id => {
+                  const ch = CHAPTERS.find(c => c.id === id)
+                  if (!ch) return null
+                  const isAlpha = ch.id === 'alphabet'
+                  const alphaDone = isAlpha ? LETTERS.filter(l => listenedLetters.has(l.id)).length : 0
+                  const alphaPct  = isAlpha ? Math.round((alphaDone / LETTERS.length) * 100) : 0
+                  return (
+                    <button key={ch.id} style={s.chapterCardGrid} onClick={() => handleChapterOpen(ch)}>
+                      <div style={{ ...s.chapterIconBadge, background: ch.color + '1c', borderColor: ch.color + '40', color: ch.color }} className="arabic">{ch.icon}</div>
+                      <div style={s.chapterTitle}>{ch.title}</div>
+                      <div style={s.chapterSub}>{ch.sub}</div>
+                      {isAlpha && (
+                        <div style={{ marginTop: 8, width: '100%' }}>
+                          <div style={s.miniTrack}>
+                            <div style={{ ...s.miniFill, width: alphaPct + '%', background: ch.color }} />
+                          </div>
+                          <div style={{ fontSize: 10, color: ch.color, marginTop: 3, fontWeight: 600 }}>
+                            {alphaDone}/{LETTERS.length} букв
+                          </div>
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
-              <span style={s.chapterArrow}>›</span>
+              {group.label === 'Харакаты' && (
+                <div style={s.harakatVideos}>
+                  <div style={s.harakatVideosLabel}>▶ Видео по теме</div>
+                  {HARAKAT_VIDEOS.map(v => (
+                    <button key={v.video} style={s.harakatVideoRow}
+                      onClick={async () => { const url = await getExtraVideoUrl(v.video); setModalVideo({ url, title: v.title }) }}>
+                      <span style={s.harakatVideoIcon}>▶</span>
+                      <span style={s.practiceTitle}>{v.title}</span>
+                      <span style={s.practiceArrow}>›</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+
+          <div style={s.practiceLabel}>Практика и дополнительно</div>
+          {PRACTICE_EXTRAS.map(p => (
+            <button key={p.video} style={s.practiceRow}
+              onClick={async () => { const url = await getExtraVideoUrl(p.video); setModalVideo({ url, title: p.title }) }}>
+              <span style={s.practiceIcon}>{p.icon}</span>
+              <span style={s.practiceTitle}>{p.title}</span>
+              <span style={s.practiceArrow}>▶</span>
             </button>
-            )
-          })}
+          ))}
+
+          <button style={s.quizCard} onClick={() => setShowQuiz(true)}>
+            <span style={s.quizIcon}>🎯</span>
+            <div style={s.videoBody}>
+              <div style={s.quizTitle}>Проверь себя</div>
+              <div style={s.videoSub}>Квиз по алфавиту, махраджам и харакатам</div>
+            </div>
+            <span style={s.videoArrow}>›</span>
+          </button>
+
           <a
             href="https://www.youtube.com/watch?v=mjySnzjBeBY&list=PLK_aw3CMJI1Kbyua963S9xpFEQc8rQDSY"
             target="_blank"
@@ -291,34 +452,23 @@ export default function QuranAlphabet({ onClose }) {
               <div style={s.progressDone}>✓ Алфавит пройден! Отличная работа!</div>
             )}
           </div>
-          <div style={s.chapIntro}>
+          <div style={{ ...s.chapIntro, flexDirection: 'column' }}>
             <div>В арабском языке <b style={{ color:'var(--gold)' }}>28 букв</b> — и все они согласные. Отдельных букв для гласных звуков нет — вместо них используются маленькие значки (харакаты), которые ставятся над или под буквой.</div>
             <div style={{ marginTop: 8 }}>Арабский читается <b style={{ color:'var(--gold)' }}>справа налево</b>.</div>
             <div style={{ marginTop: 8 }}><b style={{ color:'var(--gold)' }}>Что делать:</b> нажми на любую букву — прослушай произношение, посмотри как она выглядит в начале, середине и конце слова, и узнай откуда берётся звук (махрадж).</div>
           </div>
           <div style={s.alphaGrid}>
             {LETTERS.map(l => {
-              const mc = MAKHRAJ_COLOR[l.makhraj]
               const heard = listenedLetters.has(l.id)
               return (
-                <button key={l.id} style={{ ...s.alphaCell, borderColor: mc + '55', background: mc + '0f', position: 'relative' }}
+                <button key={l.id} style={s.alphaCell}
                   onClick={() => { setItem(l); markLetterListened(l.id) }}>
                   {heard && <div style={s.alphaCellCheck}>✓</div>}
-                  <div style={{ ...s.alphaCellDot, background: mc }} />
-                  <div style={{ ...s.alphaCellAr, color: mc }} className="arabic">{l.ar}</div>
+                  <div style={s.alphaCellAr} className="arabic">{l.ar}</div>
                   <div style={s.alphaCellName}>{l.name}</div>
                 </button>
               )
             })}
-          </div>
-          {/* Легенда */}
-          <div style={s.legend}>
-            {MAKHRAJ_GROUPS.map(g => (
-              <div key={g.id} style={{ ...s.legendItem, borderColor: g.border, background: g.bg }}>
-                <div style={{ ...s.legendDot, background: g.color }} />
-                <span style={{ color: g.color, fontSize: 10, fontWeight: 700 }}>{g.name}</span>
-              </div>
-            ))}
           </div>
           <a
             href="https://www.youtube.com/watch?v=mjySnzjBeBY&list=PLK_aw3CMJI1Kbyua963S9xpFEQc8rQDSY"
@@ -339,39 +489,76 @@ export default function QuranAlphabet({ onClose }) {
       })()}
 
       {/* ── Детальный вид: буква ── */}
-      {item && item.makhraj && (() => {
+      {item && item.makhraj && !item._chapterId && (() => {
         const l = item
         const mc = MAKHRAJ_COLOR[l.makhraj]
         const g  = MAKHRAJ_GROUPS.find(x => x.id === l.makhraj)
         return (
           <>
-            <button style={{ ...s.audioBar, borderColor: mc + '55', color: mc, background: ttsActive ? mc + '18' : 'rgba(255,255,255,.04)' }}
-              onClick={() => handlePlayUrl(l.audio)}>
-              <span style={s.abIcon}>{ttsActive ? '⏹' : '▶'}</span>
-              <span style={s.abLabel}>{ttsActive ? 'Остановить' : 'Произношение: ' + l.name}</span>
-              <span style={s.abSub}>Мишари Рашид · Нажми чтобы услышать</span>
-            </button>
+            {videoError !== l.id && videoExpanded && videoSrc && (
+              <video
+                key={l.id}
+                src={videoSrc}
+                controls
+                playsInline
+                style={s.letterVideo}
+                onError={() => setVideoError(l.id)}
+                onPlay={() => markVideoWatched(l.id)}
+              />
+            )}
+            <div style={s.mediaGrid}>
+              {videoSrc && videoError !== l.id && (
+                <button style={{ ...s.mediaSquare, borderColor: mc + '55' }} onClick={() => setVideoExpanded(true)}>
+                  <video
+                    src={videoSrc}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    style={s.mediaSquareVideo}
+                    onError={() => setVideoError(l.id)}
+                    onLoadedMetadata={e => { e.currentTarget.currentTime = 1 }}
+                  />
+                  <div style={s.mediaSquareShade} />
+                  <div style={{ ...s.mediaSquarePlay, borderColor: mc }}>▶</div>
+                  <span style={s.mediaSquareCaption}>Видео</span>
+                </button>
+              )}
+              {videoError === l.id && (
+                <button style={{ ...s.mediaSquare, borderColor: 'rgba(255,90,90,.4)' }} onClick={() => setVideoError(null)}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  <span style={s.mediaSquareCaption}>Повторить</span>
+                </button>
+              )}
+              <button style={{ ...s.mediaSquare, borderColor: mc + '55' }} onClick={() => handlePlayUrl(l.audio)}>
+                <span style={{ ...s.mediaSquareIcon, color: mc }}>{ttsActive ? '⏹' : '▶'}</span>
+                <span style={s.mediaSquareCaption}>{ttsActive ? 'Стоп' : 'Аудио'}</span>
+              </button>
+            </div>
+            {getSimilarGroupsForLetter(l.id).length > 0 && (
+              <div style={s.mediaCol}>
+                {getSimilarGroupsForLetter(l.id).map(g => (
+                  <button key={g.video} style={s.mediaRow}
+                    onClick={async () => { const url = await getExtraVideoUrl(g.video); setModalVideo({ url, title: g.title }) }}>
+                    <span style={{ ...s.mediaIconCircle, background: mc + '15', borderColor: mc + '40', color: mc, fontSize: 15 }}>⇄</span>
+                    <span style={s.mediaLabel}>{g.title}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div style={s.scroll} className="scroll-y">
               {/* Большая буква */}
               <div style={{ ...s.bigCard, borderColor: mc + '45' }}>
                 <div style={{ ...s.bigAr, color: mc }} className="arabic">{l.ar}</div>
-                <div style={{ ...s.bigArName, color: mc }} className="arabic">{l.nameAr}</div>
-                <div style={s.bigRuName}>{l.name}</div>
-                {g && <div style={{ ...s.badge, borderColor: g.border, background: g.bg, color: g.color }}>{g.nameAr} · {g.name}</div>}
+                <div style={s.bigCardInfo}>
+                  <div style={{ ...s.bigArName, color: mc }} className="arabic">{l.nameAr}</div>
+                  <div style={s.bigRuName}>{l.name}</div>
+                  {g && <div style={{ ...s.badge, borderColor: g.border, background: g.bg, color: g.color }}>{g.nameAr} · {g.name}</div>}
+                </div>
               </div>
 
               {/* Слоги */}
               <div style={s.sec}>
                 <div style={s.secTitle}>Слоги с харакатами</div>
-                <div style={{ ...s.infoBox, borderColor: mc + '25', background: mc + '07', marginBottom: 10 }}>
-                  <div style={s.infoText}>
-                    <div>Каждая буква читается по-разному в зависимости от харакат — значка над или под ней:</div>
-                    <div style={{ marginTop: 6 }}><b style={{ color: mc }}>Фатха</b> — чёрточка над буквой → добавляет «а»</div>
-                    <div><b style={{ color: mc }}>Кясра</b> — чёрточка под буквой → добавляет «и»</div>
-                    <div><b style={{ color: mc }}>Дамма</b> — завиток над буквой → добавляет «у»</div>
-                    <div style={{ marginTop: 6 }}>Прослушай букву вверху, затем повторяй каждый слог вслух по несколько раз.</div>
-                  </div>
-                </div>
                 <div style={s.syllRow}>
                   {(l.syll || []).map((sy, i) => {
                     const vowel = ['фатха «а»','кясра «и»','дамма «у»'][i]
@@ -541,42 +728,56 @@ export default function QuranAlphabet({ onClose }) {
       })()}
 
       {/* ══════════════════════════════════════════
-          ГЛАВЫ: СУКУН / ТАНВИН / ШАДДА / МАДД
+          ГЛАВА: СУКУН
       ══════════════════════════════════════════ */}
-      {chapter && ['sukun','tanwin','shadda','madd'].includes(chapter.id) && !item && (
+      {chapter?.id === 'sukun' && !item && (
         <div style={s.scroll} className="scroll-y">
-          {chapter.id === 'sukun' && <SpeicalChapter
+          <SpeicalChapter
             ch={chapter}
-            intro={`Сукун (ْ) — маленький кружок над буквой. Он говорит: «здесь нет гласной».\n\nЕсли ты уже знаешь как читать «ба», «та», «са» — теперь представь ту же букву, но без гласной на конце: просто «б», «т», «с». Именно это и делает сукун.\n\nКак читать: произноси букву коротко и закрыто, не тяни — сразу переходи к следующей букве.\n\nПример: قُلْ = «кул» + «ь» → «куль». Лям в конце с суkуном закрывает слог.`}
+            intro={`Сукун (ْ) — маленький кружок над буквой. Он говорит: «здесь нет гласной».\n\nЕсли ты уже знаешь как читать «ба», «та», «са» — теперь представь ту же букву, но без гласной на конце: просто «б», «т», «с». Именно это и делает сукун.\n\nКак читать: произноси букву коротко и закрыто, не тяни — сразу переходи к следующей букве.\n\nПример: قُلْ = «кул» + «ь» → «куль». Лям в конце с сукуном закрывает слог.`}
             items={SUKUN_EXAMPLES}
             onSpeak={handleSpeak}
             ttsActive={ttsActive}
-          />}
-          {chapter.id === 'tanwin' && <SpeicalChapter
-            ch={chapter}
-            intro={`Танвин — это когда харакат стоит дважды в конце слова. Это добавляет звук «н» к гласной.\n\nТри вида танвина:\n• Две фатхи (ً) → произноси «ан»\n• Две кясры (ٍ) → произноси «ин»\n• Две даммы (ٌ) → произноси «ун»\n\nТанвин встречается у слов без артикля اَلـ. Это знак неопределённости — как «какой-то», «один».\n\nПример: أَحَدٌ = «ахадун» (одна дамма → «у», вторая → «н»).`}
+          />
+          <div style={{ height: 24 }} />
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════
+          ГЛАВА: ДРУГИЕ ПРАВИЛА (ТАНВИН / ШАДДА / МАДД)
+      ══════════════════════════════════════════ */}
+      {chapter?.id === 'other-rules' && !item && (
+        <div style={s.scroll} className="scroll-y">
+          <div style={s.secTitle}>Танвин</div>
+          <SpeicalChapter
+            ch={{ icon:'ـٌ', color:'#a07de8', border:'rgba(160,125,232,.3)', bg:'rgba(160,125,232,.1)' }}
+            intro={`Танвин — это когда в конце слова стоит ДВОЙНОЙ харакат вместо одинарного. Он добавляет к гласной звук «н».\n\nКак выглядит и звучит:\n• ً (две фатхи) → «ан»\n• ٍ (две кясры) → «ин»\n• ٌ (две даммы) → «ун»\n\nЗачем он нужен: танвин ставится вместо артикля اَلـ («аль») и показывает, что слово неопределённое — как в русском «книга» (какая-то) вместо «эта книга».\n\nСравни: أَحَدٌ («ахадун») — «Единственный», без артикля, с танвином (первый аят суры «Аль-Ихляс», 112:1). А со словом с артиклем харакат был бы одинарный, без танвина.`}
             items={TANWIN_EXAMPLES}
             onSpeak={handleSpeak}
             ttsActive={ttsActive}
             showType
-          />}
-          {chapter.id === 'shadda' && <SpeicalChapter
-            ch={chapter}
-            intro={`Шадда (ّ) — значок в форме маленькой «ш» над буквой. Он означает: произнеси эту букву дважды.\n\nКак читать: задержись на звуке чуть дольше обычного — как будто перед буквой стоит та же самая буква с суkуном.\n\nПример:\nرَبَّنَا = «раб» (ба с суkуном) + «ба» (с фатхой) + «на» → читай: «раббана»\n\nГлавное правило: видишь шадду — удвой согласную, не пропускай.`}
+          />
+
+          <div style={{ ...s.secTitle, marginTop: 20 }}>Шадда</div>
+          <SpeicalChapter
+            ch={{ icon:'بّ', color:'#e8c05a', border:'rgba(232,192,90,.3)', bg:'rgba(232,192,90,.1)' }}
+            intro={`Шадда (ّ) — значок в форме маленького зубчика над буквой. Он означает: эта буква удваивается — звучит так, будто написана два раза подряд.\n\nКак читать: сначала короткая остановка на согласной (без гласной), затем та же буква ещё раз — уже с харакатом.\n\nПример 1: имя Пророка ﷺ — مُحَمَّد (Мухаммад). Буква م с шаддой в середине звучит удвоенно: «мухам-мад», а не «мухамад».\n\nПример 2: رَبَّنَا («раббана» — «Господь наш», часто встречается в коранических дуа). Буква ب с шаддой: «раб-бана», не «рабана».\n\nГлавное правило: видишь шадду — задержись на согласной чуть дольше, произнеси её как бы дважды.`}
             items={SHADDA_EXAMPLES}
             onSpeak={handleSpeak}
             ttsActive={ttsActive}
             showNote
-          />}
-          {chapter.id === 'madd' && <SpeicalChapter
-            ch={chapter}
-            intro={`Мадд (مَدّ) — это удлинение гласного звука. Когда видишь мадд — тяни гласную примерно 1 секунду (2 счёта).\n\nТри вида мадда:\n• Фатха + ا → тяни «а-а» (الرَّحْمَٰنِ — «рахмааани»)\n• Дамма + و → тяни «у-у» (نُوحٍ — «нуухин»)\n• Кясра + ي → тяни «и-и» (الرَّحِيمِ — «рахиими»)\n\nКак узнать мадд: после харакат сразу стоит буква ا، و или ي — это сигнал, тяни!\n\nГлавное: не тяни слишком долго и не обрывай — ровно 2 счёта.`}
+          />
+
+          <div style={{ ...s.secTitle, marginTop: 20 }}>Мадд</div>
+          <SpeicalChapter
+            ch={{ icon:'ـا', color:'#e88a5a', border:'rgba(232,138,90,.3)', bg:'rgba(232,138,90,.1)' }}
+            intro={`Мадд (مَدّ) — это удлинение гласного звука. Обычная гласная звучит мгновенно, а с маддом она тянется примерно 2 счёта (около 1 секунды).\n\nКак распознать: сразу после харакята стоит одна из трёх «долгих» букв — ا, و или ي. Это и есть сигнал «тяни».\n\nТри вида:\n• Фатха + ا → тяни «а-а», пример: الرَّحْمَٰنِ («ар-рахмааани» — Милостивый, начало почти каждой суры)\n• Дамма + و → тяни «у-у», пример: نُوحٍ («нуухин» — имя пророка Нуха)\n• Кясра + ي → тяни «и-и», пример: الرَّحِيمِ («ар-рахиими» — Милосердный)\n\nГлавное: тянуть ровно 2 счёта — не короче и не дольше.`}
             items={MADD_EXAMPLES}
             onSpeak={handleSpeak}
             ttsActive={ttsActive}
             showType
             showNote
-          />}
+          />
           <div style={{ height: 24 }} />
         </div>
       )}
@@ -621,6 +822,19 @@ export default function QuranAlphabet({ onClose }) {
           ◉ +{nurToast.amount} НУР
         </div>
       )}
+
+      {/* Модалка видео (сравнения похожих букв, практика) */}
+      {modalVideo && (
+        <div style={s.videoModalOverlay} onClick={() => setModalVideo(null)}>
+          <div style={s.videoModalCard} onClick={e => e.stopPropagation()}>
+            <div style={s.videoModalHead}>
+              <span style={s.videoModalTitle}>{modalVideo.title}</span>
+              <button style={s.videoModalClose} onClick={() => setModalVideo(null)}>✕</button>
+            </div>
+            <video src={modalVideo.url} controls autoPlay playsInline style={s.videoModalVideo} />
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -647,9 +861,8 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
       </div>
       <div style={s.secTitle}>Примеры</div>
       {items.map((item, i) => (
-        <button key={i}
-          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}
-          onClick={() => onSpeak(item.tts, 0.7)}>
+        <div key={i}
+          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}>
           <div style={{ ...s.exRowAr, color: item.color || ch.color }} className="arabic">{item.ar}</div>
           <div style={s.exRowBody}>
             <div style={s.exRowRu}>«{item.ru}» — {item.meaning}</div>
@@ -657,8 +870,7 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
             {showNote && item.note && <div style={s.exRowNote}>{item.note}</div>}
             {item.rule && <div style={s.exRowNote}>{item.rule}</div>}
           </div>
-          <span style={{ ...s.exRowPlay, color: item.color || ch.color }}>▶</span>
-        </button>
+        </div>
       ))}
     </>
   )
@@ -675,6 +887,7 @@ const s = {
   head: {
     flexShrink:0, display:'flex', alignItems:'center', gap:10,
     padding:'16px 16px 14px', borderBottom:'1px solid var(--border)',
+    position: 'relative', overflow: 'hidden',
   },
   backBtn: {
     width:36, height:36, borderRadius:10, flexShrink:0,
@@ -707,8 +920,10 @@ const s = {
   // Главная — карточки глав
   chapterCard: {
     width:'100%', display:'flex', alignItems:'center', gap:12,
-    border:'1.5px solid', borderRadius:18, padding:'13px 14px',
+    border:'1px solid var(--border)', borderRadius:18, padding:'13px 14px',
+    background: 'var(--bg-card)', color: 'var(--text)',
     cursor:'pointer', outline:'none', textAlign:'left', marginBottom:8,
+    fontFamily: 'var(--font-ui)',
   },
   chapterNum: {
     width:26, height:26, borderRadius:8, flexShrink:0,
@@ -721,12 +936,29 @@ const s = {
     fontSize:26, fontFamily:"'Scheherazade New',serif", direction:'rtl',
   },
   chapterText:   { flex:1, display:'flex', flexDirection:'column', gap:2 },
-  chapterTitle:  { fontSize:15, fontWeight:700 },
+  chapterTitle:  { fontSize:14, fontWeight:700, color: 'var(--text)' },
   chapterTitleAr:{ fontSize:13, fontFamily:"'Scheherazade New',serif", direction:'rtl', color:'var(--text-muted)' },
   chapterSub:    { fontSize:11, color:'var(--text-muted)', lineHeight:1.4 },
   chapterArrow:  { fontSize:22, color:'rgba(255,255,255,.2)', flexShrink:0 },
-  miniTrack: { height:3, borderRadius:2, background:'rgba(255,255,255,.08)' },
+  miniTrack: { height:3, borderRadius:2, background:'rgba(255,255,255,.08)', width: '100%' },
   miniFill:  { height:3, borderRadius:2, transition:'width .3s ease' },
+
+  // Сетка 2 колонки для главного экрана алфавита
+  chapterGrid: {
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16,
+  },
+  chapterCardGrid: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 3,
+    border: '1px solid var(--border)', borderRadius: 16, padding: '12px 10px',
+    background: 'var(--bg-card)', color: 'var(--text)',
+    cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)', position: 'relative',
+  },
+  chapterIconBadge: {
+    width: 44, height: 44, flexShrink: 0, marginBottom: 4,
+    borderRadius: '50%', border: '1px solid',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 22, fontFamily: "'Scheherazade New',serif", direction: 'rtl',
+  },
 
   videoCard: {
     display:'flex', alignItems:'center', gap:14,
@@ -745,6 +977,58 @@ const s = {
   videoTitle: { fontSize:14, fontWeight:700, color:'#ff6b6b', marginBottom:3 },
   videoSub:   { fontSize:11, color:'var(--text-muted)', lineHeight:1.4 },
   videoArrow: { fontSize:22, color:'rgba(255,255,255,.2)', flexShrink:0 },
+  quizCard: {
+    display:'flex', alignItems:'center', gap:14, width:'100%', marginBottom:10,
+    borderRadius:16, border:'1.5px solid rgba(160,125,232,.4)',
+    background:'linear-gradient(135deg,rgba(160,125,232,.15),rgba(160,125,232,.05))',
+    padding:'14px 16px', cursor:'pointer', outline:'none', textAlign:'left', fontFamily:'var(--font-ui)',
+  },
+  quizIcon:  { fontSize:24, flexShrink:0 },
+  quizTitle: { fontSize:14, fontWeight:700, color:'#a07de8', marginBottom:3 },
+
+  // Практика и дополнительно
+  practiceLabel: {
+    fontSize: 12, fontWeight: 700, color: 'var(--text-muted)',
+    textTransform: 'uppercase', letterSpacing: '.05em',
+    margin: '4px 2px 2px',
+  },
+  groupHint: {
+    fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.4,
+    margin: '0 2px 8px',
+  },
+  harakatVideos: {
+    display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10,
+  },
+  harakatVideosLabel: {
+    fontSize: 11, fontWeight: 700, color: '#e74c3c',
+    textTransform: 'uppercase', letterSpacing: '.05em', margin: '0 2px 2px',
+  },
+  harakatVideoRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    borderRadius: 14, border: '1.5px solid rgba(231,76,60,.35)',
+    background: 'rgba(231,76,60,.08)',
+    padding: '12px 14px', cursor: 'pointer', outline: 'none',
+    fontFamily: 'var(--font-ui)', textAlign: 'left', width: '100%',
+  },
+  harakatVideoIcon: {
+    width: 34, height: 34, borderRadius: '50%', flexShrink: 0,
+    background: 'linear-gradient(135deg,#c0392b,#e74c3c)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 13, color: '#fff', boxShadow: '0 0 12px rgba(231,76,60,.5)',
+  },
+  practiceRow: {
+    display: 'flex', alignItems: 'center', gap: 12,
+    borderRadius: 14, border: '1px solid var(--border)', background: 'var(--bg-card)',
+    padding: '12px 14px', cursor: 'pointer', outline: 'none',
+    fontFamily: 'var(--font-ui)', textAlign: 'left', width: '100%',
+  },
+  practiceIcon: {
+    width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+    background: 'rgba(201,168,76,.12)', border: '1px solid rgba(201,168,76,.3)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16,
+  },
+  practiceTitle: { flex: 1, fontSize: 14, fontWeight: 600, color: 'var(--text)' },
+  practiceArrow: { fontSize: 11, color: 'var(--gold)', flexShrink: 0 },
 
   // Прогресс алфавита
   progressWrap: {
@@ -772,12 +1056,9 @@ const s = {
   },
   alphaCell: {
     display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-    border:'1.5px solid', borderRadius:14, padding:'10px 6px',
-    cursor:'pointer', outline:'none', position:'relative',
-  },
-  alphaCellDot: {
-    position:'absolute', top:5, right:5,
-    width:6, height:6, borderRadius:'50%',
+    border:'1px solid var(--border)', borderRadius:14, padding:'10px 6px',
+    background: 'var(--bg-card)', cursor:'pointer', outline:'none',
+    position:'relative', fontFamily: 'var(--font-ui)',
   },
   alphaCellCheck: {
     position:'absolute', top:4, left:5,
@@ -785,7 +1066,7 @@ const s = {
   },
   alphaCellAr: {
     fontSize:28, fontFamily:"'Scheherazade New',serif",
-    lineHeight:1.3, direction:'rtl',
+    lineHeight:1.3, direction:'rtl', color: 'var(--gold)',
   },
   alphaCellName: { fontSize:9, color:'var(--text-muted)', fontWeight:600, textAlign:'center' },
 
@@ -797,6 +1078,97 @@ const s = {
   legendDot: { width:6, height:6, borderRadius:'50%', flexShrink:0 },
 
   // Аудио-бар
+  letterVideo: {
+    flexShrink: 0, width: '100%', maxHeight: '38vh',
+    background: '#000', display: 'block',
+  },
+  mediaCol: {
+    flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8,
+    padding: '0 16px 10px', borderBottom: '1px solid var(--border)',
+  },
+  mediaGrid: {
+    flexShrink: 0, display: 'flex', gap: 8,
+    padding: '10px 16px', borderBottom: '1px solid var(--border)',
+  },
+  mediaSquare: {
+    width: 68, height: 68, flexShrink: 0, position: 'relative', overflow: 'hidden',
+    borderRadius: 12, border: '1.5px solid', background: 'rgba(255,255,255,.04)',
+    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', outline: 'none', padding: 0,
+  },
+  mediaSquareVideo: {
+    position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
+  },
+  mediaSquareShade: {
+    position: 'absolute', inset: 0,
+    background: 'linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.55))',
+  },
+  mediaSquarePlay: {
+    position: 'absolute', top: '38%', left: '50%', transform: 'translate(-50%,-50%)',
+    width: 20, height: 20, borderRadius: '50%', border: '1.5px solid',
+    background: 'rgba(0,0,0,.5)', color: '#fff', fontSize: 8,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  mediaSquareIcon: { fontSize: 20, lineHeight: 1 },
+  mediaSquareCaption: {
+    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 1,
+    fontSize: 9, fontWeight: 700, color: '#fff', textAlign: 'center',
+    padding: '2px 0 4px', background: 'rgba(0,0,0,.35)',
+  },
+  mediaRow: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    background: 'rgba(255,255,255,.04)', border: '1px solid var(--border)',
+    borderRadius: 12, padding: '7px 10px', cursor: 'pointer', outline: 'none',
+    fontFamily: 'var(--font-ui)', textAlign: 'left',
+  },
+  mediaThumbSq: {
+    position: 'relative', flexShrink: 0, width: 34, height: 34,
+    borderRadius: 9, border: '1.5px solid', background: '#000', overflow: 'hidden',
+  },
+  videoThumbEl: {
+    position: 'absolute', inset: 0, width: '100%', height: '100%',
+    objectFit: 'cover',
+  },
+  videoThumbShade: {
+    position: 'absolute', inset: 0,
+    background: 'linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.4))',
+  },
+  mediaPlayDot: {
+    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
+    width: 16, height: 16, borderRadius: '50%', border: '1.5px solid',
+    background: 'rgba(0,0,0,.5)', color: '#fff', fontSize: 7,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  mediaIconCircle: {
+    width: 34, height: 34, borderRadius: '50%', flexShrink: 0, border: '1.5px solid',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+  },
+  mediaLabel: { fontSize: 14, fontWeight: 700, color: 'var(--text)' },
+
+  // Модалка видео (сравнения похожих букв / практика)
+  videoModalOverlay: {
+    position: 'fixed', inset: 0, zIndex: 700,
+    background: 'rgba(0,0,0,.85)', backdropFilter: 'blur(6px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+  },
+  videoModalCard: {
+    width: '100%', maxWidth: 480, background: '#000',
+    borderRadius: 16, overflow: 'hidden',
+  },
+  videoModalHead: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '10px 12px', background: 'var(--bg-card)',
+  },
+  videoModalTitle: { flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text)' },
+  videoModalClose: {
+    width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+    border: '1px solid var(--border)', background: 'transparent',
+    color: 'var(--text-muted)', fontSize: 14, cursor: 'pointer', outline: 'none',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  videoModalVideo: { width: '100%', maxHeight: '60vh', display: 'block', background: '#000' },
+
+  // Используется кнопкой "Произнести «слог»" в разделах фатха/кясра/дамма
   audioBar: {
     flexShrink:0, display:'flex', alignItems:'center', gap:10,
     padding:'10px 16px', border:'0 solid', borderBottomWidth:1,
@@ -809,16 +1181,17 @@ const s = {
 
   // Большая буква / слог
   bigCard: {
-    border:'1.5px solid', borderRadius:20, padding:'24px 16px',
-    background:'var(--bg-card)', display:'flex', flexDirection:'column',
-    alignItems:'center', gap:6, marginBottom:16,
+    border:'1.5px solid', borderRadius:18, padding:'14px 16px',
+    background:'var(--bg-card)', display:'flex', flexDirection:'row',
+    alignItems:'center', justifyContent: 'center', gap:14, marginBottom:14,
   },
   bigAr: {
-    fontSize:90, fontFamily:"'Scheherazade New',serif",
-    lineHeight:1.1, direction:'rtl',
+    fontSize:64, fontFamily:"'Scheherazade New',serif",
+    lineHeight:1.1, direction:'rtl', flexShrink: 0,
   },
+  bigCardInfo: { display:'flex', flexDirection:'column', alignItems:'flex-start', gap:2 },
   bigArName: {
-    fontSize:24, fontFamily:"'Scheherazade New',serif", direction:'rtl',
+    fontSize:20, fontFamily:"'Scheherazade New',serif", direction:'rtl',
   },
   bigRuName: { fontSize:15, fontWeight:700, color:'var(--text)' },
   badge: {

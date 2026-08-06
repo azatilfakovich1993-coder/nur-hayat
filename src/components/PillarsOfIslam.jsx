@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import DawnLandscape from './DawnLandscape'
 
 const PILLARS = [
   {
@@ -62,15 +63,20 @@ const PILLARS = [
 ]
 
 export default function PillarsOfIslam({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
-  const [expanded, setExpanded] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const swipe = useSwipeDown(selected ? () => setSelected(null) : onClose)
+
+  if (selected) {
+    return <PillarDetail pillar={selected} onBack={() => setSelected(null)} swipe={swipe} />
+  }
 
   return (
     <div style={s.wrap} {...swipe}>
       {/* Шапка */}
       <div style={s.head}>
-        <button style={s.backBtn} onClick={onClose}>‹</button>
-        <div style={s.headMid}>
+        <DawnLandscape />
+        <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={onClose}>‹</button>
+        <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>
           <div style={s.headTitle}>5 столпов ислама</div>
           <div style={s.headSub}>Основы практики каждого мусульманина</div>
         </div>
@@ -85,50 +91,19 @@ export default function PillarsOfIslam({ onClose }) {
         {/* Арабское название */}
         <div style={s.titleAr} className="arabic gold-shimmer">أَرْكَانُ الإِسْلَام</div>
 
-        {/* Столпы */}
-        {PILLARS.map((p, i) => {
-          const open = expanded === i
-          return (
-            <button
-              key={i}
-              style={{ ...s.card, borderColor: open ? p.color + '70' : 'var(--border)', background: open ? `rgba(0,0,0,.0)` : 'var(--bg-card)' }}
-              onClick={() => setExpanded(open ? null : i)}
-            >
-              {/* Строка заголовка */}
-              <div style={s.cardRow}>
-                <div style={{ ...s.numBadge, background: p.color + '22', color: p.color, borderColor: p.color + '50' }}>
-                  {p.num}
-                </div>
-                <div style={s.cardIcon}>{p.icon}</div>
-                <div style={s.cardMain}>
-                  <div style={s.cardTop2}>
-                    <span style={{ ...s.cardName, color: open ? p.color : 'var(--text)' }}>{p.name}</span>
-                    <span style={s.cardAr} className="arabic">{p.ar}</span>
-                  </div>
-                  <div style={s.cardSub}>{p.sub}</div>
-                </div>
-                <span style={{ ...s.arrow, transform: open ? 'rotate(90deg)' : 'none' }}>›</span>
+        {/* Столпы — сетка карточек */}
+        <div style={s.grid}>
+          {PILLARS.map((p, i) => (
+            <button key={i} style={{ ...s.gridCard, borderColor: p.color + '40' }} onClick={() => setSelected(p)}>
+              <div style={{ ...s.numBadge, background: p.color + '22', color: p.color, borderColor: p.color + '50' }}>
+                {p.num}
               </div>
-
-              {/* Раскрытый контент */}
-              {open && (
-                <div style={s.content}>
-                  <div style={s.translit}>{p.translit}</div>
-                  <div style={s.text}>{p.text}</div>
-                  {p.note && (
-                    <div style={s.note}>
-                      <span style={{ color: p.color, marginRight: 6 }}>ℹ</span>
-                      {p.note}
-                    </div>
-                  )}
-                  {p.hadith && (
-                    <div style={s.hadith}>{p.hadith}</div>
-                  )}
-                </div>
-              )}
+              <div style={s.gridIcon}>{p.icon}</div>
+              <div style={{ ...s.gridName, color: p.color }}>{p.name}</div>
+              <div style={s.gridSub}>{p.sub}</div>
             </button>
-          )
-        })}
+          ))}
+        </div>
 
         {/* Итог */}
         <div style={s.summaryCard}>
@@ -139,6 +114,41 @@ export default function PillarsOfIslam({ onClose }) {
             Столпы — не список правил, а структура духовной жизни. Каждый из них воспитывает определённое качество.
           </div>
         </div>
+
+        <div style={{ height: 24 }} />
+      </div>
+    </div>
+  )
+}
+
+// ── Детальный экран одного столпа ───────────────────────────────────────────
+function PillarDetail({ pillar: p, onBack, swipe }) {
+  return (
+    <div style={s.wrap} {...swipe}>
+      <div style={s.head}>
+        <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={onBack}>‹</button>
+        <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>
+          <div style={s.headTitle}>{p.name}</div>
+          <div style={s.headSub}>{p.sub}</div>
+        </div>
+      </div>
+
+      <div style={s.scroll} className="scroll-y">
+        <div style={{ ...s.detailHero, borderColor: p.color + '45' }}>
+          <div style={{ ...s.numBadge, background: p.color + '22', color: p.color, borderColor: p.color + '50' }}>{p.num}</div>
+          <div style={s.detailIcon}>{p.icon}</div>
+          <div style={s.detailAr} className="arabic">{p.ar}</div>
+          <div style={{ ...s.translit, marginTop: 6 }}>{p.translit}</div>
+        </div>
+
+        <div style={s.text}>{p.text}</div>
+        {p.note && (
+          <div style={s.note}>
+            <span style={{ color: p.color, marginRight: 6 }}>ℹ</span>
+            {p.note}
+          </div>
+        )}
+        {p.hadith && <div style={s.hadith}>{p.hadith}</div>}
 
         <div style={{ height: 24 }} />
       </div>
@@ -157,6 +167,7 @@ const s = {
     flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
     padding: '18px 20px 14px',
     borderBottom: '1px solid var(--border)',
+    position: 'relative', overflow: 'hidden',
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 12, flexShrink: 0,
@@ -180,37 +191,33 @@ const s = {
     direction: 'rtl',
   },
 
-  card: {
-    width: '100%', textAlign: 'left', cursor: 'pointer',
-    borderRadius: 16, border: '1px solid',
-    padding: '14px 14px', marginBottom: 10,
-    outline: 'none', transition: 'border-color .2s',
-  },
-  cardRow: { display: 'flex', alignItems: 'center', gap: 10 },
   numBadge: {
     width: 26, height: 26, borderRadius: 8,
     border: '1px solid', fontSize: 12, fontWeight: 800,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     flexShrink: 0,
   },
-  cardIcon: { fontSize: 22, flexShrink: 0 },
-  cardMain: { flex: 1, minWidth: 0 },
-  cardTop2: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 },
-  cardName: { fontSize: 15, fontWeight: 700, transition: 'color .2s' },
-  cardAr: {
-    fontFamily: "'Scheherazade New',serif",
-    fontSize: 14, color: 'var(--text-muted)', direction: 'rtl',
-  },
-  cardSub: { fontSize: 12, color: 'var(--text-muted)' },
-  arrow: {
-    fontSize: 20, color: 'var(--text-muted)',
-    flexShrink: 0, transition: 'transform .2s', display: 'inline-block',
-  },
 
-  content: {
-    marginTop: 12, paddingTop: 12,
-    borderTop: '1px solid var(--border)',
+  grid: {
+    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 20,
   },
+  gridCard: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+    background: 'var(--bg-card)', borderRadius: 16, border: '1px solid',
+    padding: '16px 10px', cursor: 'pointer', outline: 'none', position: 'relative',
+  },
+  gridIcon: { fontSize: 26, marginTop: 4 },
+  gridName: { fontSize: 15, fontWeight: 700 },
+  gridSub:  { fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' },
+
+  detailHero: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center',
+    background: 'var(--bg-card)', border: '1px solid', borderRadius: 20,
+    padding: '20px 16px', marginBottom: 16,
+  },
+  detailIcon: { fontSize: 40, margin: '8px 0' },
+  detailAr: { fontFamily: "'Scheherazade New',serif", fontSize: 24, direction: 'rtl', color: 'var(--gold)' },
+
   translit: {
     fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 8,
   },

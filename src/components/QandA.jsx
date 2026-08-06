@@ -1,12 +1,24 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
 import { QA_CATEGORIES, QA_DATA } from '../data/qa-data'
+import DawnLandscape from './DawnLandscape'
 
-export default function QandA({ onClose }) {
+export default function QandA({ onClose, initialOpenId }) {
   const swipe    = useSwipeDown(onClose)
   const [search,   setSearch]   = useState('')
   const [category, setCategory] = useState('basics')
   const [openId,   setOpenId]   = useState(null)
+
+  // Переход из общего поиска приложения — сразу открыть конкретный вопрос
+  // (и переключить на его категорию, иначе он может быть скрыт текущим фильтром)
+  useEffect(() => {
+    if (initialOpenId == null) return
+    const item = QA_DATA.find(q => q.id === initialOpenId)
+    if (!item) return
+    setCategory(item.category)
+    setOpenId(item.id)
+    setSearch('')
+  }, [initialOpenId])
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase().trim()
@@ -25,8 +37,9 @@ export default function QandA({ onClose }) {
     <div style={s.wrap} {...swipe}>
       {/* Шапка */}
       <div style={s.head}>
-        <button style={s.backBtn} onClick={onClose}>‹</button>
-        <div style={s.headMid}>
+        <DawnLandscape />
+        <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={onClose}>‹</button>
+        <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>
           <div style={s.headTitle}>Вопросы и ответы</div>
           <div style={s.headSub}>Достоверные ответы для начинающих</div>
         </div>
@@ -103,6 +116,7 @@ const s = {
     flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12,
     padding: '16px 16px 12px',
     borderBottom: '1px solid var(--border)',
+    position: 'relative', overflow: 'hidden',
   },
   backBtn: {
     width: 36, height: 36, borderRadius: 12, flexShrink: 0,

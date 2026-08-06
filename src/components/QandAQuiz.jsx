@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { QUIZ_QUESTIONS } from '../data/quiz'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
+import { localDateStr } from '../utils/date'
 
 const TOTAL = 10
 
@@ -14,7 +15,7 @@ function shuffle(arr) {
   return a
 }
 
-export default function QandAQuiz({ onClose, onFinish }) {
+export default function QandAQuiz({ onClose, onFinish, category }) {
   const { user, profile, setProfile } = useAuth()
   const [phase, setPhase] = useState('start') // start | quiz | result
   const [questions, setQuestions] = useState([])
@@ -24,8 +25,11 @@ export default function QandAQuiz({ onClose, onFinish }) {
   const [results, setResults] = useState([]) // {correct: bool}[]
   const [nurAwarded, setNurAwarded] = useState(0)
 
+  const pool = category ? QUIZ_QUESTIONS.filter(q => q.category === category) : QUIZ_QUESTIONS
+  const total = Math.min(TOTAL, pool.length)
+
   function startQuiz() {
-    const q = shuffle(QUIZ_QUESTIONS).slice(0, TOTAL)
+    const q = shuffle(pool).slice(0, total)
     setQuestions(q)
     setCurrent(0)
     setSelected(null)
@@ -45,7 +49,7 @@ export default function QandAQuiz({ onClose, onFinish }) {
     const newResults = [...results, { correct }]
     setResults(newResults)
 
-    if (current + 1 < TOTAL) {
+    if (current + 1 < total) {
       setCurrent(c => c + 1)
       setSelected(null)
       setAnswered(false)
@@ -53,23 +57,31 @@ export default function QandAQuiz({ onClose, onFinish }) {
       // Финиш
       const score = newResults.filter(r => r.correct).length
       let nur = 5
-      if (score >= 7) nur = 50
-      else if (score >= 4) nur = 20
-      setNurAwarded(nur)
-      addNur(nur, user, profile, setProfile)
+      if (score >= total * 0.7) nur = 50
+      else if (score >= total * 0.4) nur = 20
+
+      // НУР за квиз — не чаще раза в день на категорию, чтобы нельзя было фармить повторным прохождением
+      const dailyKey = `quiz_nur_${category || 'all'}_${localDateStr()}_${user?.id || ''}`
+      if (!localStorage.getItem(dailyKey)) {
+        localStorage.setItem(dailyKey, '1')
+        setNurAwarded(nur)
+        addNur(nur, user, profile, setProfile)
+      } else {
+        setNurAwarded(0)
+      }
       setPhase('result')
       onFinish?.() // сообщаем BeginnerPath что квиз завершён
     }
   }
 
-  if (phase === 'start') return <StartScreen onStart={startQuiz} onClose={onClose} />
+  if (phase === 'start') return <StartScreen onStart={startQuiz} onClose={onClose} category={category} total={total} />
   if (phase === 'result') {
     const score = results.filter(r => r.correct).length
-    return <ResultScreen score={score} nur={nurAwarded} onRetry={startQuiz} onClose={onClose} />
+    return <ResultScreen score={score} total={total} nur={nurAwarded} onRetry={startQuiz} onClose={onClose} />
   }
 
   const q = questions[current]
-  const progress = ((current) / TOTAL) * 100
+  const progress = ((current) / total) * 100
 
   return (
     <div style={s.wrap}>
@@ -80,7 +92,7 @@ export default function QandAQuiz({ onClose, onFinish }) {
           <div style={s.progressBar}>
             <div style={{ ...s.progressFill, width: `${progress}%` }} />
           </div>
-          <span style={s.progressLabel}>{current + 1} / {TOTAL}</span>
+          <span style={s.progressLabel}>{current + 1} / {total}</span>
         </div>
         <div style={s.catTag}>{q.category}</div>
       </div>
@@ -128,7 +140,7 @@ export default function QandAQuiz({ onClose, onFinish }) {
 
         {answered && (
           <button style={s.nextBtn} onClick={handleNext}>
-            {current + 1 < TOTAL ? 'Следующий вопрос →' : 'Завершить квиз →'}
+            {current + 1 < total ? 'Следующий вопрос →' : 'Завершить квиз →'}
           </button>
         )}
 
@@ -138,7 +150,9 @@ export default function QandAQuiz({ onClose, onFinish }) {
   )
 }
 
-function StartScreen({ onStart, onClose }) {
+function StartScreen({ onStart, onClose, category, total }) {
+  const highMin = Math.ceil(total * 0.7)
+  const midMin = Math.ceil(total * 0.4)
   return (
     <div style={s.wrap}>
       <div style={s.head}>
@@ -146,12 +160,12 @@ function StartScreen({ onStart, onClose }) {
       </div>
       <div style={s.centerBody}>
         <div style={s.startEmoji}>🎯</div>
-        <div style={s.startTitle}>Исламский квиз</div>
-        <div style={s.startSub}>Проверь свои знания об исламе</div>
+        <div style={s.startTitle}>{category ? `Квиз: ${category}` : 'Исламский квиз'}</div>
+        <div style={s.startSub}>{category ? `Проверь себя по теме «${category}»` : 'Проверь свои знания об исламе'}</div>
 
         <div style={s.startInfo}>
           {[
-            ['📝', `${TOTAL} вопросов`],
+            ['📝', `${total} вопросов`],
             ['🔀', 'Каждый раз новые вопросы'],
             ['💡', 'Объяснение после каждого ответа'],
             ['◉', 'НУР за правильные ответы'],
@@ -166,9 +180,9 @@ function StartScreen({ onStart, onClose }) {
         <div style={s.nurTable}>
           <div style={s.nurTableTitle}>Награды НУР</div>
           {[
-            ['7–10 правильных', '+50 НУР', '#52b788'],
-            ['4–6 правильных',  '+20 НУР', '#c9a84c'],
-            ['0–3 правильных',  '+5 НУР',  '#888'],
+            [`${highMin}–${total} правильных`, '+50 НУР', '#52b788'],
+            [`${midMin}–${highMin - 1} правильных`,  '+20 НУР', '#c9a84c'],
+            [`0–${midMin - 1} правильных`,  '+5 НУР',  '#888'],
           ].map(([label, nur, color], i) => (
             <div key={i} style={s.nurRow}>
               <span style={s.nurLabel}>{label}</span>
@@ -183,10 +197,10 @@ function StartScreen({ onStart, onClose }) {
   )
 }
 
-function ResultScreen({ score, nur, onRetry, onClose }) {
-  const pct = Math.round((score / TOTAL) * 100)
-  const isGood = score >= 7
-  const isMid  = score >= 4
+function ResultScreen({ score, total, nur, onRetry, onClose }) {
+  const pct = Math.round((score / total) * 100)
+  const isGood = score >= total * 0.7
+  const isMid  = score >= total * 0.4
 
   return (
     <div style={s.wrap}>
@@ -201,12 +215,14 @@ function ResultScreen({ score, nur, onRetry, onClose }) {
 
         <div style={s.scoreCircle}>
           <div style={s.scoreNum}>{score}</div>
-          <div style={s.scoreOf}>из {TOTAL}</div>
+          <div style={s.scoreOf}>из {total}</div>
         </div>
 
         <div style={s.nurAwarded}>
           <span style={s.nurAwardedIcon}>◉</span>
-          <span style={s.nurAwardedText}>+{nur} НУР начислено</span>
+          <span style={s.nurAwardedText}>
+            {nur > 0 ? `+${nur} НУР начислено` : 'НУР за эту тему сегодня уже получен — приходи завтра'}
+          </span>
         </div>
 
         <div style={s.resultMsg}>

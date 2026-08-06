@@ -29,6 +29,8 @@
     "adhan": "^4.4.3",
     "firebase": "^10.7.0",
     "framer-motion": "^11.0.0",
+    "fuse.js": "^7.5.0",
+    "lucide-react": "^1.27.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.21.0"

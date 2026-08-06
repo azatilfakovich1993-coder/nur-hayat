@@ -5,7 +5,8 @@ const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-pro
 const CDN = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
 const sa  = n => AUDIO_PROXY + encodeURIComponent(`${CDN}/${n}.mp3`)
 // Local letter audio (letter_2 = Alif ... letter_29 = Ya)
-const la  = n      => `/audio/letters/letter_${n}.mp3`
+// BASE_URL учитывает подпапку деплоя (GitHub Pages: /nur-hayat/, Firebase: /)
+const la  = n      => `${import.meta.env.BASE_URL}audio/letters/letter_${n}.mp3`
 
 export const MAKHRAJ_GROUPS = [
   {

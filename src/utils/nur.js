@@ -3,18 +3,18 @@ import { localDateStr } from './date'
 import { rewardFeedback } from './feedback'
 
 export const NUR_LEVELS = [
-  { min: 0,    max: 100,  emoji: '🕯️', label: 'Искра',     color: '#2D6A4F' },
-  { min: 101,  max: 300,  emoji: '🌙', label: 'Путник',    color: '#7B6BAE' },
-  { min: 301,  max: 700,  emoji: '⭐', label: 'Ищущий',    color: '#C9A84C' },
-  { min: 701,  max: 1500, emoji: '🌟', label: 'Верующий',  color: '#E8A030' },
-  { min: 1501, max: Infinity, emoji: '☀️', label: 'Нур',   color: '#FFD700' },
+  { min: 0,    max: 100,  label: 'Новичок',    color: '#C9822E', light: '#E8A857', dark: '#A66A1F' },
+  { min: 101,  max: 300,  label: 'Идущий',     color: '#2FA9A0', light: '#5FD4CB', dark: '#1F7A73' },
+  { min: 301,  max: 700,  label: 'Упорный',    color: '#2D6A4F', light: '#4F9C78', dark: '#1D4A35' },
+  { min: 701,  max: 1500, label: 'Покоритель', color: '#3D5FC4', light: '#6C8AE0', dark: '#2A3F8F' },
+  { min: 1501, max: Infinity, label: 'Нур',    color: '#FFD700', light: '#FFF3B0', dark: '#E8A030' },
 ]
 
 const MILESTONES = [
-  { threshold: 101,  emoji: '🌙', label: 'Путник',    color: '#7B6BAE', text: 'Ты вступил на путь! Каждый намаз, каждое слово зикра — приближает тебя к Аллаху.' },
-  { threshold: 301,  emoji: '⭐', label: 'Ищущий',    color: '#C9A84C', text: 'Твоё сердце открылось знанию. Продолжай — Аллах с теми, кто ищет Его.' },
-  { threshold: 701,  emoji: '🌟', label: 'Верующий',  color: '#E8A030', text: 'Вера укрепляется в твоём сердце. МашаАллах — ты идёшь правильным путём.' },
-  { threshold: 1501, emoji: '☀️', label: 'Нур',       color: '#FFD700', text: 'Ты стал Нуром! Пусть Аллах примет все твои усилия и одарит тебя Своей близостью.' },
+  { threshold: 101,  label: 'Идущий',     color: '#2FA9A0', light: '#5FD4CB', dark: '#1F7A73', text: 'Ты вступил на путь! Каждый намаз, каждое слово зикра — приближает тебя к Аллаху.' },
+  { threshold: 301,  label: 'Упорный',    color: '#2D6A4F', light: '#4F9C78', dark: '#1D4A35', text: 'Твоё сердце открылось знанию. Продолжай — Аллах с теми, кто ищет Его.' },
+  { threshold: 701,  label: 'Покоритель', color: '#3D5FC4', light: '#6C8AE0', dark: '#2A3F8F', text: 'Вера укрепляется в твоём сердце. МашаАллах — ты идёшь правильным путём.' },
+  { threshold: 1501, label: 'Нур',        color: '#FFD700', light: '#FFF3B0', dark: '#E8A030', text: 'Ты стал Нуром! Пусть Аллах примет все твои усилия и одарит тебя Своей близостью.' },
 ]
 
 export function getNurLevel(nur = 0) {

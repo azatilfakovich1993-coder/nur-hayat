@@ -1,11 +1,18 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { Capacitor } from '@capacitor/core'
+import { LocalNotifications } from '@capacitor/local-notifications'
 import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../App'
 import { supabase } from '../supabase/client'
+import { scheduleDailyVerseNotifs, cancelDailyVerseNotifs } from '../hooks/useDailyVerseNotif'
+import { scheduleIslamicHolidayNotifs, cancelIslamicHolidayNotifs } from '../hooks/useIslamicHolidayNotif'
 import { SURAS } from '../data/suras'
 import { TRANSLITERATIONS, ARABIC_TEXTS, FALLBACK_TRANSLATIONS } from '../data/verses'
 import { getNurLevel } from '../utils/nur'
+import NurGem from '../components/ui/NurGem'
+import { nextAuthRoute } from '../utils/nextAuthRoute'
+import { BEGINNER_HINT_KEY } from '../components/BeginnerPath'
 import { LETTERS } from '../data/arabic-letters'
 import { SURAHS } from '../data/surahs-learn'
 import { NotesGoals } from '../components/NotesGoals'
@@ -103,11 +110,53 @@ export default function ProfilePage() {
   }
 
   // Настройки уведомлений
-  const [notifPrayer,  setNotifPrayer]  = useState(() => localStorage.getItem('notif_prayer') !== 'false')
+  const [notifPrayer,     setNotifPrayer]     = useState(() => localStorage.getItem('notif_prayer') !== 'false')
+  const [notifAzkar,      setNotifAzkar]      = useState(() => localStorage.getItem('notif_azkar') !== 'false')
+  const [notifDailyVerse, setNotifDailyVerse] = useState(() => localStorage.getItem('daily_verse_enabled') !== 'false')
+  const [notifHolidays, setNotifHolidays] = useState(() => localStorage.getItem('islamic_holidays_enabled') !== 'false')
   const [notifMorning, setNotifMorning] = useState(() => localStorage.getItem('notif_morning') || '')
+  const [beginnerHint, setBeginnerHint] = useState(() => localStorage.getItem(BEGINNER_HINT_KEY) !== 'false')
+
+  function toggleBeginnerHint() {
+    const next = !beginnerHint
+    setBeginnerHint(next)
+    localStorage.setItem(BEGINNER_HINT_KEY, String(next))
+  }
   const [notifEvening, setNotifEvening] = useState(() => localStorage.getItem('notif_evening') || '')
 
+  // localStorage — только оптимистичное значение для первого рендера;
+  // реальный источник правды — БД (могло меняться с другого устройства).
+  useEffect(() => {
+    if (!user) return
+    supabase.from('prayer_schedules')
+      .select('prayer_notif_enabled, azkar_notif_enabled, daily_verse_enabled')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!data) return
+        if (data.prayer_notif_enabled != null) {
+          setNotifPrayer(data.prayer_notif_enabled)
+          localStorage.setItem('notif_prayer', String(data.prayer_notif_enabled))
+        }
+        if (data.azkar_notif_enabled != null) {
+          setNotifAzkar(data.azkar_notif_enabled)
+          localStorage.setItem('notif_azkar', String(data.azkar_notif_enabled))
+        }
+        if (data.daily_verse_enabled != null) {
+          setNotifDailyVerse(data.daily_verse_enabled)
+          localStorage.setItem('daily_verse_enabled', String(data.daily_verse_enabled))
+        }
+      })
+  }, [user?.id])
+
+  // Раньше тут стоял чисто браузерный Notification.requestPermission() — в
+  // Android WebView он не показывает системный диалог и обычно сразу
+  // резолвится как denied, поэтому тумблер физически не переключался.
   async function requestNotifPermission() {
+    if (Capacitor.isNativePlatform()) {
+      const { display } = await LocalNotifications.requestPermissions()
+      return display === 'granted'
+    }
     if (!('Notification' in window)) return false
     if (Notification.permission === 'granted') return true
     const res = await Notification.requestPermission()
@@ -149,13 +198,57 @@ export default function ProfilePage() {
     setTimeout(() => setTestPushStatus(''), 5000)
   }
 
+  // Выключать можно всегда безусловно — разрешение на уведомления нужно
+  // только когда включаем (раньше ранний return на !ok блокировал и выключение).
   async function togglePrayerNotif() {
-    const ok = await requestNotifPermission()
-    if (!ok) return
     const next = !notifPrayer
+    if (next) {
+      const ok = await requestNotifPermission()
+      if (!ok) return
+    }
     setNotifPrayer(next)
     localStorage.setItem('notif_prayer', String(next))
     saveNotifSettings({ prayer_notif_enabled: next })
+  }
+
+  async function toggleAzkarNotif() {
+    const next = !notifAzkar
+    if (next) {
+      const ok = await requestNotifPermission()
+      if (!ok) return
+    }
+    setNotifAzkar(next)
+    localStorage.setItem('notif_azkar', String(next))
+    saveNotifSettings({ azkar_notif_enabled: next })
+  }
+
+  async function toggleDailyVerseNotif() {
+    const next = !notifDailyVerse
+    if (next) {
+      const ok = await requestNotifPermission()
+      if (!ok) return
+    }
+    setNotifDailyVerse(next)
+    localStorage.setItem('daily_verse_enabled', String(next))
+    saveNotifSettings({ daily_verse_enabled: next })
+    if (Capacitor.isNativePlatform()) {
+      if (next) scheduleDailyVerseNotifs()
+      else cancelDailyVerseNotifs()
+    }
+  }
+
+  async function toggleHolidaysNotif() {
+    const next = !notifHolidays
+    if (next) {
+      const ok = await requestNotifPermission()
+      if (!ok) return
+    }
+    setNotifHolidays(next)
+    localStorage.setItem('islamic_holidays_enabled', String(next))
+    if (Capacitor.isNativePlatform()) {
+      if (next) scheduleIslamicHolidayNotifs()
+      else cancelIslamicHolidayNotifs()
+    }
   }
 
   function saveTime(key, val, setter, dbField) {
@@ -235,11 +328,17 @@ export default function ProfilePage() {
   const [showBadges,    setShowBadges]    = useState(false)
 
   useEffect(() => {
-    if (location.state?.openFavorites) {
-      setShowFavorites(true)
-      // Чистим state чтобы повторный рендер не открывал снова
-      navigate(location.pathname, { replace: true, state: {} })
-    }
+    const st = location.state
+    // Проверяем конкретные ключи, а не сам объект — после чистки state
+    // ниже location.state становится {} (истинно!), и проверка "if (!location.state)"
+    // пропускала бы её снова и снова, зацикливая navigate() до бесконечности.
+    if (!st || !(st.activeTab || st.openFavorites || st.openNotes || st.openBadges)) return
+    if (st.activeTab)    setActiveTab(st.activeTab)
+    if (st.openFavorites) setShowFavorites(true)
+    if (st.openNotes)     setShowNotes(true)
+    if (st.openBadges)    setShowBadges(true)
+    // Чистим state чтобы повторный рендер не открывал снова
+    navigate(location.pathname, { replace: true, state: {} })
   }, [location.state])
 
   const [likedHadiths, setLikedHadiths] = useState(() => {
@@ -320,7 +419,7 @@ export default function ProfilePage() {
     if (loggingOut) return
     setLoggingOut(true)
     await logout()
-    navigate('/auth')
+    navigate(nextAuthRoute(false))
   }
 
   // Получаем название суры по ключу аята "2:153"
@@ -381,10 +480,10 @@ export default function ProfilePage() {
           <SectionLabel>Уведомления</SectionLabel>
           <div style={s.notifRow}>
             <div style={s.notifLeft}>
-              <span style={s.notifIcon}>🔔</span>
+              <span style={s.notifIcon}>🕌</span>
               <div>
-                <div style={s.notifName}>Уведомления намазов</div>
-                <div style={s.notifSub}>Напоминания до азана</div>
+                <div style={s.notifName}>Уведомления намаза</div>
+                <div style={s.notifSub}>Напоминания и время азана (можно настроить точнее во вкладке «Намаз»)</div>
               </div>
             </div>
             <button style={{ ...s.toggle, background: notifPrayer ? 'var(--gold)' : 'var(--bg-card-hover)' }} onClick={togglePrayerNotif}>
@@ -393,7 +492,24 @@ export default function ProfilePage() {
           </div>
           <div style={s.notifRow}>
             <div style={s.notifLeft}>
-              <span style={s.notifIcon}>🌅</span>
+              <span style={s.notifIcon}>🔔</span>
+              <div>
+                <div style={s.notifName}>Уведомления азкаров</div>
+                <div style={s.notifSub}>Утренние и вечерние напоминания ниже</div>
+              </div>
+            </div>
+            <button style={{ ...s.toggle, background: notifAzkar ? 'var(--gold)' : 'var(--bg-card-hover)' }} onClick={toggleAzkarNotif}>
+              <div style={{ ...s.toggleThumb, transform: notifAzkar ? 'translateX(22px)' : 'translateX(0)' }} />
+            </button>
+          </div>
+          <div style={s.notifRow}>
+            <div style={s.notifLeft}>
+              <span style={s.notifIcon}>
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="1.8" strokeLinecap="round">
+                  <path d="M12 3v3M4.2 10.5l1.8 1.4M19.8 10.5l-1.8 1.4M2 17h20" />
+                  <path d="M6 17a6 6 0 0 1 12 0" />
+                </svg>
+              </span>
               <div>
                 <div style={s.notifName}>Утренние азкары</div>
                 <div style={s.notifSub}>Напоминание после Фаджра</div>
@@ -403,7 +519,11 @@ export default function ProfilePage() {
           </div>
           <div style={s.notifRow}>
             <div style={s.notifLeft}>
-              <span style={s.notifIcon}>🌆</span>
+              <span style={s.notifIcon}>
+                <svg width="19" height="19" viewBox="0 0 24 24" fill="var(--gold)">
+                  <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
+                </svg>
+              </span>
               <div>
                 <div style={s.notifName}>Вечерние азкары</div>
                 <div style={s.notifSub}>Напоминание после Асра</div>
@@ -411,6 +531,45 @@ export default function ProfilePage() {
             </div>
             <input type="time" value={notifEvening} style={s.timeInput} onChange={e => saveTime('notif_evening', e.target.value, setNotifEvening, 'evening_adhkar_time')} />
           </div>
+          <div style={s.notifRow}>
+            <div style={s.notifLeft}>
+              <span style={s.notifIcon}>🌙</span>
+              <div>
+                <div style={s.notifName}>Аят дня</div>
+                <div style={s.notifSub}>Ежедневное уведомление утром</div>
+              </div>
+            </div>
+            <button style={{ ...s.toggle, background: notifDailyVerse ? 'var(--gold)' : 'var(--bg-card-hover)' }} onClick={toggleDailyVerseNotif}>
+              <div style={{ ...s.toggleThumb, transform: notifDailyVerse ? 'translateX(22px)' : 'translateX(0)' }} />
+            </button>
+          </div>
+          <div style={s.notifRow}>
+            <div style={s.notifLeft}>
+              <span style={s.notifIcon}>🕋</span>
+              <div>
+                <div style={s.notifName}>Исламские праздники</div>
+                <div style={s.notifSub}>Напоминание за 3 дня и в день праздника</div>
+              </div>
+            </div>
+            <button style={{ ...s.toggle, background: notifHolidays ? 'var(--gold)' : 'var(--bg-card-hover)' }} onClick={toggleHolidaysNotif}>
+              <div style={{ ...s.toggleThumb, transform: notifHolidays ? 'translateX(22px)' : 'translateX(0)' }} />
+            </button>
+          </div>
+
+          {!isSeeker && (
+            <div style={s.notifRow}>
+              <div style={s.notifLeft}>
+                <span style={s.notifIcon}>🌱</span>
+                <div>
+                  <div style={s.notifName}>Путь новичка на Главной</div>
+                  <div style={s.notifSub}>Показывать карточку-приглашение под «Путём мусульманина»</div>
+                </div>
+              </div>
+              <button style={{ ...s.toggle, background: beginnerHint ? 'var(--gold)' : 'var(--bg-card-hover)' }} onClick={toggleBeginnerHint}>
+                <div style={{ ...s.toggleThumb, transform: beginnerHint ? 'translateX(22px)' : 'translateX(0)' }} />
+              </button>
+            </div>
+          )}
 
           {/* Тема */}
           <SectionLabel>Тема оформления</SectionLabel>
@@ -1022,7 +1181,10 @@ function NurStat({ nur }) {
     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:3, flex:1 }}>
       <div style={{ fontSize:11, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'.06em' }}>Нур</div>
       <div style={{ fontSize:22, fontWeight:700, color: lvl.color }}>{nur}</div>
-      <div style={{ fontSize:13 }}>{lvl.emoji} {lvl.label}</div>
+      <div style={{ fontSize:13, display:'flex', alignItems:'center', gap:5 }}>
+        <NurGem light={lvl.light} dark={lvl.dark} size={14} glow={lvl.max === Infinity} />
+        {lvl.label}
+      </div>
       {next && (
         <div style={{ width:'80%', height:3, borderRadius:2, background:'rgba(255,255,255,.1)', overflow:'hidden' }}>
           <div style={{ height:'100%', borderRadius:2, background: lvl.color, width: `${progress}%`, transition:'width .4s' }} />

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
-import { addNur, addNurIfLevel } from '../utils/nur'
+import { addNur } from '../utils/nur'
 import { supabase } from '../supabase/client'
 import QuranAlphabet  from './QuranAlphabet'
 import PrayerGuide    from './PrayerGuide'
@@ -27,6 +27,7 @@ const STEPS = [
     action: 'Читать',
     section: 'qa',
     manual: true,
+    color: '#6a8fd8',
   },
   {
     id: 'pillars',
@@ -38,6 +39,7 @@ const STEPS = [
     action: 'Читать',
     section: 'pillars',
     manual: true,
+    color: '#52b788',
   },
   {
     id: 'shahada',
@@ -49,6 +51,7 @@ const STEPS = [
     action: 'Читать',
     section: 'shahada',
     manual: true,
+    color: '#c9a84c',
   },
   {
     id: 'alphabet',
@@ -60,6 +63,7 @@ const STEPS = [
     action: 'Учить',
     section: 'alphabet',
     manual: false,
+    color: '#7B6BAE',
   },
   {
     id: 'fatiha',
@@ -71,6 +75,7 @@ const STEPS = [
     action: 'Учить',
     section: 'surahs',
     manual: false,
+    color: '#2ea87a',
   },
   {
     id: 'namaz',
@@ -82,6 +87,7 @@ const STEPS = [
     action: 'Открыть',
     section: 'guide',
     manual: true,
+    color: '#E8A030',
   },
   {
     id: 'first_prayer',
@@ -93,6 +99,7 @@ const STEPS = [
     action: 'Открыть намаз',
     section: 'first_prayer',
     manual: true,
+    color: '#2C7A6E',
   },
   {
     id: 'quiz',
@@ -105,6 +112,7 @@ const STEPS = [
     section: 'quiz',
     manual: false,
     finalStep: true,
+    color: '#9B59B6',
   },
 ]
 
@@ -312,7 +320,7 @@ function handleMarkDoneRequest(step) {
     setManualDone(next)
     saveProgress(next)
     // Шахада имеет особую награду +150 через onConfirm — не начисляем обычные +20
-    if (!manualDone[id] && id !== 'shahada') addNurIfLevel(20, 'seeker', user, profile, setProfile)
+    if (!manualDone[id] && id !== 'shahada') addNur(20, user, profile, setProfile)
     const allDone = STEPS.every(st => {
       if (!st.manual) return st.id === 'alphabet' ? auto.alphabet : auto.fatiha
       return !!next[st.id]
@@ -413,56 +421,69 @@ function handleMarkDoneRequest(step) {
         </div>
 
         {/* ── Шаги ── */}
-        {STEPS.map((step, i) => {
+        <div style={s.orderHint}>💡 Рекомендуем проходить шаги по порядку — каждый следующий опирается на предыдущий.</div>
+        {(() => {
+          const doneSteps     = STEPS.filter(st => isDone(st))
+          const upcomingSteps = STEPS.filter(st => !isDone(st) && st.id !== currentStep?.id)
+          return [...doneSteps, ...(currentStep ? [currentStep] : []), ...upcomingSteps]
+        })().map((step, i) => {
           const done    = isDone(step)
           const isCurr  = !done && currentStep?.id === step.id
+
+          // Пройденные шаги — компактная строка, без описания и кнопок,
+          // чтобы не спорить за внимание с текущим шагом
+          const color = step.color || 'var(--gold)'
+
+          if (done) {
+            return (
+              <button key={step.id} style={{ ...s.stepCardDone, borderColor: color + '35' }} onClick={() => setOpenSection(step.section)}>
+                <div style={{ ...s.stepNumDone, background: color, color: '#0a0a12' }}>✓</div>
+                <span style={s.stepIconSmall}>{step.icon}</span>
+                <span style={{ ...s.stepTitleDone, color }}>{step.title}</span>
+                <span style={{ ...s.stepReplay, color }}>↩</span>
+              </button>
+            )
+          }
+
           return (
             <div key={step.id} style={{
               ...s.stepCard,
-              borderColor: done  ? 'rgba(201,168,76,.45)'
-                         : isCurr ? 'rgba(201,168,76,.25)'
-                         : 'var(--border)',
-              background:  done  ? 'rgba(201,168,76,.07)'
-                         : isCurr ? 'rgba(201,168,76,.04)'
-                         : 'var(--bg-card)',
+              borderColor: isCurr ? color + '55' : 'var(--border)',
+              background: 'var(--bg-card)',
             }}>
               {/* Левая часть — номер */}
               <div style={{
                 ...s.stepNum,
-                background:  done  ? 'linear-gradient(135deg,#9a6a10,#c9a84c)'
-                           : isCurr ? 'rgba(201,168,76,.18)'
-                           : 'rgba(255,255,255,.06)',
-                color: done ? '#070710' : isCurr ? 'var(--gold)' : 'var(--text-muted)',
-                border: done ? 'none' : `1.5px solid ${isCurr ? 'rgba(201,168,76,.4)' : 'var(--border)'}`,
+                background: isCurr ? color + '22' : 'rgba(255,255,255,.06)',
+                color: isCurr ? color : 'var(--text-muted)',
+                border: `1.5px solid ${isCurr ? color + '55' : 'var(--border)'}`,
               }}>
-                {done ? '✓' : step.num}
+                {step.num}
               </div>
 
               {/* Контент */}
               <div style={s.stepBody}>
                 <div style={s.stepHeader}>
                   <span style={s.stepIcon}>{step.icon}</span>
-                  <span style={{ ...s.stepTitle, color: done ? 'var(--gold)' : isCurr ? 'var(--text)' : 'var(--text-muted)' }}>
+                  <span style={{ ...s.stepTitle, color: isCurr ? color : 'var(--text-muted)' }}>
                     {step.title}
                   </span>
-                  {isCurr && <span style={s.currBadge}>СЕЙЧАС</span>}
+                  {isCurr && <span style={{ ...s.currBadge, background: color + '22', borderColor: color + '55', color }}>СЕЙЧАС</span>}
                 </div>
-                <div style={s.stepDesc}>{step.desc}</div>
-                {isCurr && <div style={s.stepHint}>💡 {step.hint}</div>}
-
                 <div style={s.stepBtns}>
                   <button
-                    style={{ ...s.openBtn, opacity: done ? 0.6 : 1 }}
+                    style={isCurr
+                      ? { ...s.openBtn, background: `linear-gradient(135deg,${color},${color}cc)` }
+                      : { ...s.openBtnGhost, borderColor: color + '35', color }}
                     onClick={() => setOpenSection(step.section)}
                   >
-                    {done ? '↩ Пройти снова' : `${step.action} →`}
+                    {step.action} →
                   </button>
-                  {step.manual && !done && (
-                    <button style={s.doneBtn} onClick={() => handleMarkDoneRequest(step)}>
+                  {isCurr && step.manual && (
+                    <button style={{ ...s.doneBtn, borderColor: color + '45', color }} onClick={() => handleMarkDoneRequest(step)}>
                       ✓ Выполнено
                     </button>
                   )}
-                  {done && <span style={s.doneMark}>✓ Пройдено</span>}
                 </div>
               </div>
             </div>
@@ -531,6 +552,9 @@ function PathCompletedScreen({ user, profile, setProfile, onClose, isReturn }) {
   const navigate  = useNavigate()
   const [loading, setLoading] = useState(false)
   const [visible, setVisible] = useState(false)
+  // Предложение перейти на "Мусульманин, расту" имеет смысл только для тех, кто
+  // ещё seeker — те, кто пришёл сюда уже будучи growing/practicing, никуда "переходить" не должны.
+  const isSeeker = (profile?.level || 'seeker') === 'seeker'
 
   // Плавное появление
   useState(() => { setTimeout(() => setVisible(true), 50) })
@@ -594,46 +618,56 @@ function PathCompletedScreen({ user, profile, setProfile, onClose, isReturn }) {
           ))}
         </div>
 
-        {/* Предложение перехода */}
-        <div style={pc.upgradeCard}>
-          <div style={pc.upgradeTitle}>Что дальше?</div>
-          <div style={pc.upgradeText}>
-            Ты готов к следующему уровню — <strong style={{ color: '#52b788' }}>«Мусульманин, расту»</strong>.
-            {'\n\n'}
-            На этом уровне главное — ежедневный намаз. Приложение покажет расписание, будет отслеживать твои намазы и помогать читать Коран каждый день.
-          </div>
+        {/* Предложение перехода — только для seeker */}
+        {isSeeker && (
+          <div style={pc.upgradeCard}>
+            <div style={pc.upgradeTitle}>Что дальше?</div>
+            <div style={pc.upgradeText}>
+              Ты готов к следующему уровню — <strong style={{ color: '#52b788' }}>«Мусульманин, расту»</strong>.
+              {'\n\n'}
+              На этом уровне главное — ежедневный намаз. Приложение покажет расписание, будет отслеживать твои намазы и помогать читать Коран каждый день.
+            </div>
 
-          <div style={pc.changesList}>
-            {[
-              { icon: '🕌', text: 'Расписание намазов — главный экран' },
-              { icon: '📖', text: 'Трекер чтения Корана' },
-              { icon: '🔥', text: 'Серия дней намазов' },
-              { icon: '📚', text: 'Весь раздел «Знания» остаётся доступным' },
-            ].map((item, i) => (
-              <div key={i} style={pc.changesItem}>
-                <span style={pc.changesIcon}>{item.icon}</span>
-                <span style={pc.changesText}>{item.text}</span>
-              </div>
-            ))}
+            <div style={pc.changesList}>
+              {[
+                { icon: '🕌', text: 'Расписание намазов — главный экран' },
+                { icon: '📖', text: 'Трекер чтения Корана' },
+                { icon: '🔥', text: 'Серия дней намазов' },
+                { icon: '📚', text: 'Весь раздел «Знания» остаётся доступным' },
+              ].map((item, i) => (
+                <div key={i} style={pc.changesItem}>
+                  <span style={pc.changesIcon}>{item.icon}</span>
+                  <span style={pc.changesText}>{item.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Кнопки */}
-        <button
-          style={{ ...pc.btnPrimary, opacity: loading ? 0.7 : 1 }}
-          onClick={handleUpgrade}
-          disabled={loading}
-        >
-          {loading ? 'Переходим...' : 'Перейти на «Мусульманин, расту» →'}
-        </button>
+        {isSeeker ? (
+          <>
+            <button
+              style={{ ...pc.btnPrimary, opacity: loading ? 0.7 : 1 }}
+              onClick={handleUpgrade}
+              disabled={loading}
+            >
+              {loading ? 'Переходим...' : 'Перейти на «Мусульманин, расту» →'}
+            </button>
 
-        <button style={pc.btnSecondary} onClick={handleStay}>
-          Остаться пока на этом уровне
-        </button>
+            <button style={pc.btnSecondary} onClick={handleStay}>
+              Остаться пока на этом уровне
+            </button>
 
-        <div style={pc.stayNote}>
-          Ты всегда можешь сменить уровень в Профиле
-        </div>
+            <div style={pc.stayNote}>
+              Ты всегда можешь сменить уровень в Профиле
+            </div>
+          </>
+        ) : (
+          <button style={pc.btnPrimary} onClick={handleStay}>
+            Готово →
+          </button>
+        )}
 
         <div style={{ height: 32 }} />
       </div>
@@ -932,15 +966,9 @@ export function BeginnerPathWidget({ onOpen }) {
         <div style={sw.currentCard}>
           <div style={sw.currentTop}>
             <span style={sw.currentIcon}>{currentStep?.icon}</span>
-            <div style={sw.currentMeta}>
-              <div style={sw.currentNum}>Шаг {currentStep?.num}</div>
-              <div style={sw.currentTitle}>{currentStep?.title}</div>
-            </div>
+            <div style={sw.currentTitle}>{currentStep?.title}</div>
+            <button style={sw.startBtnCompact} onClick={onOpen}>Начать →</button>
           </div>
-          <div style={sw.currentHint}>{currentStep?.hint}</div>
-          <button style={sw.startBtn} onClick={onOpen}>
-            Начать шаг →
-          </button>
         </div>
       )}
     </div>
@@ -1030,6 +1058,57 @@ export function MuslimPathWidget({ streak, donePrayers, level, onOpen }) {
   )
 }
 
+// ── Приглашение пройти "Путь новичка" для growing/practicing (по желанию) ─────
+export const BEGINNER_HINT_KEY = 'show_beginner_path_hint'
+export function shouldShowBeginnerHint() {
+  return localStorage.getItem(BEGINNER_HINT_KEY) !== 'false'
+}
+
+export function BeginnerPathHintCard({ onOpen, onHide }) {
+  const [confirming, setConfirming] = useState(false)
+
+  function hide() {
+    localStorage.setItem(BEGINNER_HINT_KEY, 'false')
+    setConfirming(false)
+    onHide?.()
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <button style={hc.wrap} onClick={onOpen}>
+        <span
+          style={hc.closeBtn}
+          onClick={e => { e.stopPropagation(); setConfirming(true) }}
+        >✕</span>
+        <span style={hc.icon}>🌱</span>
+        <div style={hc.body}>
+          <div style={hc.title}>Путь новичка</div>
+          <div style={hc.sub}>7 шагов с основ — если хочешь пройти заново</div>
+        </div>
+        <span style={hc.tag}>по желанию</span>
+        <span style={hc.arrow}>›</span>
+      </button>
+
+      {confirming && (
+        <div style={hc.modalOverlay} onClick={() => setConfirming(false)}>
+          <div style={hc.modalCard} onClick={e => e.stopPropagation()}>
+            <div style={hc.modalIcon}>🌱</div>
+            <div style={hc.modalTitle}>Скрыть «Путь новичка»?</div>
+            <div style={hc.modalBody}>
+              Карточка исчезнет с Главной. Если захочешь пройти его позже — включи обратно в{' '}
+              <strong style={{ color: 'var(--gold)' }}>Профиль → Настройки → «Путь новичка на Главной»</strong>.
+            </div>
+            <div style={hc.modalBtns}>
+              <button style={hc.modalBtnCancel} onClick={() => setConfirming(false)}>Отмена</button>
+              <button style={hc.modalBtnDanger} onClick={hide}>Скрыть</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Полноэкранный путь мусульманина ───────────────────────────────────────────
 export function MuslimPath({ streak, weekDone, donePrayers, level, onClose, onOpenPrayer, onOpenQuran, onContinueQuran }) {
   const todayDone    = donePrayers?.size || 0
@@ -1112,7 +1191,9 @@ export function MuslimPath({ streak, weekDone, donePrayers, level, onClose, onOp
             <div style={ms.quranText}>
               <div style={ms.quranLabel}>Продолжить чтение</div>
               <div style={ms.quranTitle}>{lastRead.ru}</div>
-              <div style={ms.quranSub}>{lastRead.suraId}-я сура · {lastRead.ayats} аятов</div>
+              <div style={ms.quranSub}>
+                {lastRead.suraId}-я сура{lastRead.ayah ? ` · аят ${lastRead.ayah}` : ` · ${lastRead.ayats} аятов`}
+              </div>
               <div style={ms.quranDate}>
                 {(() => {
                   const d = new Date(lastRead.date)
@@ -1120,7 +1201,7 @@ export function MuslimPath({ streak, weekDone, donePrayers, level, onClose, onOp
                 })()}
               </div>
             </div>
-            <button style={ms.quranContinueBtn} onClick={() => onContinueQuran(lastRead.suraId)}>
+            <button style={ms.quranContinueBtn} onClick={() => onContinueQuran(lastRead.suraId, lastRead.ayah)}>
               Читать →
             </button>
           </div>
@@ -1179,6 +1260,11 @@ const s = {
   progressTrack: { height: 4, borderRadius: 2, background: 'rgba(255,255,255,.08)' },
   progressFill:  { height: 4, borderRadius: 2, background: 'linear-gradient(90deg,#9a6a10,#c9a84c)', transition: 'width .5s ease' },
 
+  orderHint: {
+    fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.4,
+    margin: '2px 2px 10px',
+  },
+
   // Поздравление
   celebCard: {
     borderRadius: 18, border: '1px solid rgba(201,168,76,.4)',
@@ -1201,6 +1287,22 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontSize: 14, fontWeight: 800, transition: 'all .2s',
   },
+
+  // Компактная строка для уже пройденного шага
+  stepCardDone: {
+    width: '100%', borderRadius: 12, border: '1px solid',
+    background: 'var(--bg-card)', padding: '9px 12px', marginBottom: 6,
+    display: 'flex', alignItems: 'center', gap: 8,
+    cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)', textAlign: 'left',
+  },
+  stepNumDone: {
+    width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 11, fontWeight: 800,
+  },
+  stepIconSmall: { fontSize: 13, flexShrink: 0, opacity: .8 },
+  stepTitleDone: { flex: 1, fontSize: 13, fontWeight: 600 },
+  stepReplay: { fontSize: 13, flexShrink: 0, opacity: .7 },
   stepBody:   { flex: 1, minWidth: 0 },
   stepHeader: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 },
   stepIcon:   { fontSize: 16, flexShrink: 0 },
@@ -1208,6 +1310,7 @@ const s = {
   currBadge:  {
     fontSize: 8, fontWeight: 800, letterSpacing: '.06em',
     background: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
+    border: '1px solid transparent',
     color: '#070710', borderRadius: 6, padding: '2px 6px', flexShrink: 0,
   },
   stepDesc:  { fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 6 },
@@ -1220,6 +1323,12 @@ const s = {
   openBtn: {
     fontSize: 12, fontWeight: 600, color: 'var(--gold)',
     background: 'rgba(201,168,76,.1)', border: '1px solid rgba(201,168,76,.3)',
+    borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
+    outline: 'none', fontFamily: 'var(--font-ui)',
+  },
+  openBtnGhost: {
+    fontSize: 12, fontWeight: 600,
+    background: 'transparent', border: '1px solid',
     borderRadius: 20, padding: '6px 14px', cursor: 'pointer',
     outline: 'none', fontFamily: 'var(--font-ui)',
   },
@@ -1289,11 +1398,20 @@ const sw = {
   },
   // Текущий шаг
   currentCard: {},
-  currentTop: { display: 'flex', gap: 12, alignItems: 'center', marginBottom: 10 },
-  currentIcon: { fontSize: 36, flexShrink: 0 },
+  currentTop: { display: 'flex', gap: 10, alignItems: 'center' },
+  currentIcon: { fontSize: 26, flexShrink: 0 },
   currentMeta: {},
   currentNum: { fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 },
-  currentTitle: { fontSize: 18, fontWeight: 800, color: 'var(--text)' },
+  currentTitle: {
+    flex: 1, fontSize: 15, fontWeight: 700, color: 'var(--text)',
+    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+  },
+  startBtnCompact: {
+    flexShrink: 0, padding: '9px 16px', borderRadius: 12, border: 'none',
+    background: 'linear-gradient(135deg,#9a6a10,#c9a84c)',
+    color: '#fff', fontSize: 13, fontWeight: 700,
+    cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)',
+  },
   currentHint: {
     fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6,
     marginBottom: 14,
@@ -1367,6 +1485,57 @@ const mw = {
   fill:     { height: 4, borderRadius: 2, background: 'linear-gradient(90deg,#1a7a56,#52b788)', transition: 'width .4s ease' },
   arrow:    { fontSize: 22, color: 'rgba(255,255,255,.2)', flexShrink: 0 },
   lastRead: { fontSize: 11, color: 'var(--text-muted)', marginTop: 6 },
+}
+
+// ── Стили: BeginnerPathHintCard ────────────────────────────────────────────────
+const hc = {
+  wrap: {
+    position: 'relative', width: '100%', display: 'flex', alignItems: 'center', gap: 11,
+    borderRadius: 14, border: '1px solid rgba(201,168,76,.22)',
+    background: 'rgba(201,168,76,.05)',
+    padding: '11px 14px', cursor: 'pointer', outline: 'none', textAlign: 'left',
+    fontFamily: 'var(--font-ui)',
+  },
+  closeBtn: {
+    position: 'absolute', top: -7, right: -7, width: 22, height: 22, borderRadius: '50%',
+    background: 'var(--bg-card)', border: '1px solid var(--border)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer', zIndex: 2, lineHeight: 1,
+  },
+  icon:   { fontSize: 19, flexShrink: 0, opacity: .9 },
+  body:   { flex: 1, minWidth: 0 },
+  title:  { fontSize: 12.5, fontWeight: 700, color: 'var(--text)', marginBottom: 1 },
+  sub:    { fontSize: 10.5, color: 'var(--text-dim)' },
+  tag: {
+    fontSize: 9, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase',
+    color: 'var(--gold)', background: 'rgba(201,168,76,.14)', borderRadius: 8,
+    padding: '2px 6px', flexShrink: 0,
+  },
+  arrow: { fontSize: 17, color: 'rgba(255,255,255,.16)', flexShrink: 0 },
+
+  modalOverlay: {
+    position: 'fixed', inset: 0, zIndex: 200,
+    background: 'rgba(0,0,0,.65)', backdropFilter: 'blur(3px)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 340, background: 'var(--bg-card)', border: '1px solid var(--border)',
+    borderRadius: 18, padding: '20px 18px', textAlign: 'center', fontFamily: 'var(--font-ui)',
+  },
+  modalIcon:  { fontSize: 26, marginBottom: 8 },
+  modalTitle: { fontSize: 15.5, fontWeight: 800, color: 'var(--text)', marginBottom: 8 },
+  modalBody:  { fontSize: 12.5, lineHeight: 1.55, color: 'var(--text-muted)', marginBottom: 18 },
+  modalBtns:  { display: 'flex', gap: 8 },
+  modalBtnCancel: {
+    flex: 1, padding: '11px 0', borderRadius: 12, fontSize: 13, fontWeight: 700,
+    cursor: 'pointer', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text-muted)',
+    fontFamily: 'var(--font-ui)',
+  },
+  modalBtnDanger: {
+    flex: 1, padding: '11px 0', borderRadius: 12, fontSize: 13, fontWeight: 700,
+    cursor: 'pointer', border: 'none', background: 'rgba(220,80,80,.15)', color: '#ff8a8a',
+    fontFamily: 'var(--font-ui)',
+  },
 }
 
 // ── Стили: MuslimPath (полноэкранный) ─────────────────────────────────────────

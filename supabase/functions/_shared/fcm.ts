@@ -59,6 +59,9 @@ export async function sendFcm(
             notification_priority: 'PRIORITY_HIGH',
             default_sound: true,
             default_vibrate_timings: true,
+            // Без этого Android показывает каждую повторную доставку тем же
+            // tag отдельным уведомлением вместо схлопывания/замены.
+            tag: tag || 'nur-hayat',
           },
         },
         data: { url: url || '/', tag: tag || 'nur-hayat' },

@@ -4,11 +4,16 @@ import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { useFcmToken } from './hooks/useFcmToken'
 import { useDailyVerseNotif } from './hooks/useDailyVerseNotif'
+import { useIslamicHolidayNotif } from './hooks/useIslamicHolidayNotif'
+import { useSyncUtcOffset } from './hooks/useSyncUtcOffset'
+import { useAutoPrayerSetup } from './hooks/useAutoPrayerSetup'
 import { supabase } from './supabase/client'
 import { Capacitor } from '@capacitor/core'
 import { App as CapApp } from '@capacitor/app'
+import { runTopBackHandler } from './hooks/useBackHandler'
 import BottomNav           from './components/ui/BottomNav'
 import NurMilestoneModal   from './components/NurMilestoneModal'
+import HolidayPopup        from './components/HolidayPopup'
 import './styles/index.css'
 
 export const ThemeContext    = createContext(null)
@@ -28,13 +33,6 @@ const ProfilePage     = lazy(() => import('./pages/ProfilePage'))
 const ChatPage        = lazy(() => import('./pages/ChatPage'))
 const PrayerPage      = lazy(() => import('./pages/PrayerPage'))
 const LearnPage       = lazy(() => import('./pages/LearnPage'))
-
-function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <LoadingScreen />
-  if (!user)   return <Navigate to="/auth" replace />
-  return children
-}
 
 function OnboardGuard({ children }) {
   const { user, profile, loading } = useAuth()
@@ -194,6 +192,9 @@ function PushSetup() {
   usePushNotifications(user)
   useFcmToken(user, navigate)
   useDailyVerseNotif(user)
+  useIslamicHolidayNotif(user)
+  useSyncUtcOffset(user)
+  useAutoPrayerSetup(user)
   return null
 }
 
@@ -215,6 +216,7 @@ function BackButtonHandler() {
     if (!Capacitor.isNativePlatform()) return
 
     const handler = CapApp.addListener('backButton', ({ canGoBack }) => {
+      if (runTopBackHandler()) return
       if (canGoBack) {
         navigate(-1)
         return
@@ -257,13 +259,17 @@ export default function App() {
         <BackButtonHandler />
         <PushSetup />
         <MilestoneListener />
+        <HolidayPopup />
         {showBismillah && <BismillahSplash onDone={() => sessionStorage.setItem('bismillah_shown', '1')} />}
         <ErrorBoundary>
         <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/"           element={<SplashPage />} />
           <Route path="/auth"       element={<AuthPage />} />
-          <Route path="/onboarding" element={<ProtectedRoute><OnboardingPage /></ProtectedRoute>} />
+          {/* Публичный маршрут: онбординг теперь идёт ДО регистрации (анонимно),
+              а для старых аккаунтов с onboarded:false компонент сам ветвится на
+              авторизованный сценарий — см. OnboardingPage.jsx */}
+          <Route path="/onboarding" element={<OnboardingPage />} />
 
           {/* Экраны с нижней навигацией */}
           <Route path="/home"    element={<OnboardGuard><AppShell><HomePage /></AppShell></OnboardGuard>} />

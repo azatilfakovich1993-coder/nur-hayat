@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
+import { fetchTimings } from '../utils/prayerTimes'
 import { rewardFeedback, tapFeedback } from '../utils/feedback'
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
@@ -844,46 +846,6 @@ const qb = {
 }
 
 // aladhan.com — таймзона определяется по координатам на сервере автоматически
-async function fetchTimings(lat, lon, method, school, fajrAngle, ishaAngle) {
-  const today = localDateStr()
-  const latR = Math.round(lat * 100) / 100
-  const lonR = Math.round(lon * 100) / 100
-  const cacheKey = `pt-${latR}-${lonR}-${method}-${school}-${fajrAngle}-${ishaAngle}-${today}`
-  try {
-    const cached = localStorage.getItem(cacheKey)
-    if (cached) return JSON.parse(cached)
-  } catch {}
-
-  const url = `https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=99&methodSettings=${fajrAngle},null,${ishaAngle}&school=${school}&midnightMode=0`
-
-  async function fetchOnce() {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 10000)
-    try {
-      const res = await fetch(url, { signal: controller.signal })
-      if (!res.ok) throw new Error('aladhan error')
-      return await res.json()
-    } finally {
-      clearTimeout(timer)
-    }
-  }
-
-  // Под VPN/плохой сетью один запрос легко ловит таймаут — пробуем несколько раз,
-  // прежде чем показать пользователю ошибку
-  let lastErr
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const json = await fetchOnce()
-      try { localStorage.setItem(cacheKey, JSON.stringify(json.data)) } catch {}
-      return json.data
-    } catch (err) {
-      lastErr = err
-      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt))
-    }
-  }
-  throw lastErr
-}
-
 // ── Тасбих ────────────────────────────────────────────────────
 const DHIKR = [
   { ar: 'سُبْحَانَ اللَّهِ',   ru: 'Субханаллах',    target: 33, color: '#7B6BAE' },
@@ -1046,6 +1008,8 @@ const tb = {
 export default function PrayerPage() {
   const { profile, user, setProfile } = useAuth()
   const lang = profile?.language || 'ru'
+  const routerLocation = useLocation()
+  const navigate = useNavigate()
 
   // Режим: 'auto' (геолокация) или 'manual' (город вручную)
   const [mode,      setMode]      = useState(() => {
@@ -1075,6 +1039,11 @@ export default function PrayerPage() {
   const [remind,    setRemind]    = useState(() => {
     try { return JSON.parse(localStorage.getItem('prayerRemind') || '[30,20,10]') } catch { return [30, 20, 10] }
   })
+  // Общий выключатель — тот же prayer_notif_enabled, что и тумблер в Профиле,
+  // гасит и локальные, и серверные push (реминдеры + "время намаза").
+  // null = реальное значение с сервера ещё не подгружено — так эффект синхронизации
+  // ниже не может случайно перезаписать выключенный пуш дефолтным "true" (была гонка).
+  const [prayerPushEnabled, setPrayerPushEnabled] = useState(null)
 
   // ── Трекер намазов ──
   const [donePrayers, setDonePrayers] = useState(new Set())
@@ -1095,6 +1064,20 @@ export default function PrayerPage() {
   const [showTasbih,    setShowTasbih]    = useState(false)
   const [showQibla,     setShowQibla]     = useState(false)
   const [showCalendar,  setShowCalendar]  = useState(false)
+
+  // Переход из общего поиска приложения — сразу открыть нужный попап
+  useEffect(() => {
+    const st = routerLocation.state
+    // Проверяем конкретные ключи, а не сам объект — после чистки state ниже
+    // routerLocation.state становится {} (истинно!), и проверка "if (!state)"
+    // пропускала бы её снова и снова, зацикливая navigate() до бесконечности.
+    if (!st || !(st.openQibla || st.openTasbih || st.openCalendar || st.openSettings)) return
+    if (st.openQibla)    setShowQibla(true)
+    if (st.openTasbih)   setShowTasbih(true)
+    if (st.openCalendar) setShowCalendar(true)
+    if (st.openSettings) setShowSettings(true)
+    navigate(routerLocation.pathname, { replace: true, state: {} })
+  }, [routerLocation.state])
 
   // Тик каждую секунду
   useEffect(() => {
@@ -1384,30 +1367,49 @@ export default function PrayerPage() {
     requestNotifPerm().then(setNotifOk)
   }, [])
 
+  // Подтягиваем реальное значение общего выключателя из БД (могло быть
+  // изменено с другого устройства или во вкладке Профиль)
+  useEffect(() => {
+    if (!user) { setPrayerPushEnabled(true); return }
+    supabase.from('prayer_schedules').select('prayer_notif_enabled').eq('user_id', user.id).maybeSingle()
+      .then(({ data }) => { setPrayerPushEnabled(data?.prayer_notif_enabled !== false) })
+  }, [user?.id])
+
+  async function togglePrayerPush() {
+    const next = !prayerPushEnabled
+    setPrayerPushEnabled(next)
+    if (!user) return
+    const { error } = await supabase.from('prayer_schedules').upsert(
+      { user_id: user.id, prayer_notif_enabled: next },
+      { onConflict: 'user_id' }
+    )
+    if (error) console.warn('[Prayer] toggle push failed:', error.message)
+  }
+
   // Планируем уведомления при наличии данных
   useEffect(() => {
-    if (timings && notifOk) {
+    if (timings && notifOk && prayerPushEnabled) {
       const pts = PRAYERS.map(p => ({ ...p, time: timings[p.id] })).filter(p => p.time)
       scheduleNotifs(pts, remind)
     }
     return () => clearAllTimers()
-  }, [timings, notifOk, remind])
+  }, [timings, notifOk, remind, prayerPushEnabled])
 
   // Сохраняем расписание намазов на сервер (для push-уведомлений когда приложение закрыто)
   useEffect(() => {
-    if (!timings || !user || !notifOk) return
+    if (!timings || !user || !notifOk || prayerPushEnabled === null) return
     const today = localDateStr()
     const utcOffset = -new Date().getTimezoneOffset()
     const prayerTimings = { Fajr: timings.Fajr, Dhuhr: timings.Dhuhr, Asr: timings.Asr, Maghrib: timings.Maghrib, Isha: timings.Isha }
     // Без .then()/await запрос у supabase-js строится, но реально не отправляется —
     // его fetch() запускается лениво внутри .then(), который раньше тут не вызывался.
     supabase.from('prayer_schedules').upsert(
-      { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset },
+      { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset, prayer_notif_enabled: prayerPushEnabled },
       { onConflict: 'user_id' }
     ).then(({ error }) => {
       if (error) console.warn('[Prayer] schedule sync failed:', error.message)
     })
-  }, [timings, user?.id, notifOk, remind])
+  }, [timings, user?.id, notifOk, remind, prayerPushEnabled])
 
   // Вычисляем статус каждого намаза
   const prayerList = PRAYERS.map(p => ({ ...p, time: timings?.[p.id] || null }))
@@ -1684,23 +1686,40 @@ export default function PrayerPage() {
             <div style={s.notifCard}>
               <div style={s.notifTop}>
                 <div style={s.notifTitle}>🔔 Напоминания</div>
+                <button
+                  style={s.muteBtn}
+                  onClick={togglePrayerPush}
+                  title={prayerPushEnabled ? 'Выключить все уведомления о намазе' : 'Включить уведомления о намазе'}
+                >
+                  {prayerPushEnabled ? '🔔' : '🔕'}
+                </button>
               </div>
 
-              <div style={s.notifDesc}>За сколько минут до намаза напоминать:</div>
-
-              <div style={s.reminderBtns}>
-                {[10, 20, 30].map(min => (
-                  <button key={min} style={{
-                    ...s.remBtn,
-                    background: remind.includes(min) ? 'rgba(72,199,120,.15)' : 'var(--bg-card)',
-                    border: remind.includes(min) ? '1.5px solid #48c778' : '1px solid var(--border)',
-                    color: remind.includes(min) ? '#48c778' : 'var(--text-muted)',
-                    fontWeight: remind.includes(min) ? 600 : 400,
-                  }} onClick={() => toggleRemind(min)}>
-                    {remind.includes(min) ? '✓ ' : ''}{min} мин
-                  </button>
-                ))}
+              <div style={s.muteHint}>
+                Нажмите на {prayerPushEnabled ? '🔔' : '🔕'}, чтобы {prayerPushEnabled ? 'выключить' : 'включить'} все уведомления о намазе
               </div>
+
+              {prayerPushEnabled ? (
+                <>
+                  <div style={s.notifDesc}>За сколько минут до намаза напоминать:</div>
+
+                  <div style={s.reminderBtns}>
+                    {[10, 20, 30].map(min => (
+                      <button key={min} style={{
+                        ...s.remBtn,
+                        background: remind.includes(min) ? 'rgba(72,199,120,.15)' : 'var(--bg-card)',
+                        border: remind.includes(min) ? '1.5px solid #48c778' : '1px solid var(--border)',
+                        color: remind.includes(min) ? '#48c778' : 'var(--text-muted)',
+                        fontWeight: remind.includes(min) ? 600 : 400,
+                      }} onClick={() => toggleRemind(min)}>
+                        {remind.includes(min) ? '✓ ' : ''}{min} мин
+                      </button>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div style={s.notifDesc}>Уведомления о намазе выключены — не будут приходить ни напоминания, ни push о наступлении времени.</div>
+              )}
             </div>
 
             {/* ── Настройки расчёта ── */}
@@ -2007,6 +2026,8 @@ const s = {
   notifTop:   { display:'flex', alignItems:'center', gap:10, marginBottom:10 },
   notifTitle: { flex:1, fontSize:15, fontWeight:600, color:'var(--text)' },
   enableBtn:  { padding:'5px 14px', borderRadius:12, background:'var(--gold)', color:'#070710', border:'none', cursor:'pointer', fontWeight:600, fontSize:12, fontFamily:'var(--font-ui)' },
+  muteBtn:    { padding:'8px 16px', borderRadius:14, border:'1.5px solid var(--border)', background:'none', cursor:'pointer', fontSize:24, fontFamily:'var(--font-ui)', lineHeight:1 },
+  muteHint:   { fontSize:11, color:'var(--text-dim)', marginBottom:10, marginTop:-4 },
   notifOn:    { fontSize:12, color:'#52b788', fontWeight:600 },
   notifDesc:  { fontSize:13, color:'var(--text-muted)', marginBottom:10 },
   reminderBtns: { display:'flex', gap:8 },

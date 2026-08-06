@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import NurGem from './ui/NurGem'
 
 export default function NurMilestoneModal({ milestone, onClose }) {
   const [visible, setVisible] = useState(false)
@@ -36,9 +37,9 @@ export default function NurMilestoneModal({ milestone, onClose }) {
         {/* Новый уровень лейбл */}
         <div style={s.topLabel}>НОВЫЙ УРОВЕНЬ</div>
 
-        {/* Эмодзи */}
-        <div style={{ ...s.emoji, filter: `drop-shadow(0 0 24px ${milestone.color})` }}>
-          {milestone.emoji}
+        {/* Камень уровня */}
+        <div style={s.gemWrap}>
+          <NurGem light={milestone.light} dark={milestone.dark} size={72} glow />
         </div>
 
         {/* Название */}
@@ -120,10 +121,10 @@ const s = {
     color: 'rgba(201,168,76,.6)', marginBottom: 20,
     fontFamily: 'var(--font-ui)',
   },
-  emoji: {
-    fontSize: 72, lineHeight: 1,
+  gemWrap: {
+    display: 'flex', justifyContent: 'center',
     animation: 'nurPulse 2s ease-in-out infinite',
-    display: 'block', marginBottom: 16,
+    marginBottom: 16,
   },
   levelName: {
     fontSize: 32, fontWeight: 900,

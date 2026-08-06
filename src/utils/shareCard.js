@@ -55,7 +55,10 @@ export async function generateShareCard({ kind, arabic, translit, translation, s
   // Заголовок (АЯТ ДНЯ / ХАДИС ДНЯ)
   ctx.font = '600 32px Inter, sans-serif'
   ctx.fillStyle = '#C9A84C'
-  ctx.fillText(kind === 'hadith' ? 'Х А Д И С   Д Н Я' : 'А Я Т   Д Н Я', CARD_W / 2, 170)
+  ctx.fillText(
+    kind === 'hadith' ? 'Х А Д И С   Д Н Я' : kind === 'eid' ? 'С   П Р А З Д Н И К О М' : 'А Я Т   Д Н Я',
+    CARD_W / 2, 170,
+  )
 
   let y = 420
 

@@ -1,23 +1,36 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { useAuth } from '../hooks/useAuth'
 import { withTimeout, sleep } from '../utils/network'
+import { trackEvent } from '../utils/analytics'
 import RegisterStep1 from '../components/auth/RegisterStep1'
 import RegisterStep3Gender from '../components/auth/RegisterStep3Gender'
-import RegisterStep3 from '../components/auth/RegisterStep3'
+
+function readLocal(key) {
+  try { return localStorage.getItem(key) } catch { return null }
+}
 
 export default function AuthPage() {
   const navigate = useNavigate()
   const { setProfile } = useAuth()
-  const [tab,     setTab]     = useState('login')
+  // Пришли из анонимного онбординга (уровень уже выбран там) — сразу открываем регистрацию.
+  const [tab,     setTab]     = useState(() => readLocal('pending_level') ? 'register' : 'login')
   const [regStep, setRegStep] = useState(1)
-  const [regData, setRegData] = useState({})
+  const [regData, setRegData] = useState(() => {
+    const level = readLocal('pending_level')
+    return level ? { level, language: 'ru', translationId: 131 } : {}
+  })
   const [email,   setEmail]   = useState('')
   const [pass,    setPass]    = useState('')
   const [error,   setError]   = useState('')
   const [loading, setLoading] = useState(false)
   const [status,  setStatus]  = useState('')
+
+  useEffect(() => { trackEvent('auth_view') }, [])
+  useEffect(() => {
+    if (tab === 'register') trackEvent('register_step_view', { step: regStep })
+  }, [tab, regStep])
 
   /* ── Вход ── */
   async function handleLogin() {
@@ -30,11 +43,15 @@ export default function AuthPage() {
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
         if (attempt > 1) setStatus(`Повтор ${attempt} из 3…`)
-        const { error: e } = await withTimeout(
+        const { data: signInData, error: e } = await withTimeout(
           supabase.auth.signInWithPassword(creds),
           25000,
         )
-        if (!e) { navigate('/home'); return }
+        if (!e) {
+          trackEvent('login_completed', {}, signInData?.user?.id)
+          navigate('/home')
+          return
+        }
         const msg = e.message || ''
         if (/invalid|credentials|email/i.test(msg)) {
           setError(friendlyError(msg))
@@ -60,10 +77,16 @@ export default function AuthPage() {
     setRegData(p => ({ ...p, ...data, language: 'ru', translationId: 131 }))
     setRegStep(3)
   }
-  function step3Next(data) { setRegData(p => ({ ...p, ...data })); setRegStep(4) }
-
-  async function step4Next(data) {
+  // Уровень ("кто ты") уже выбран на анонимном онбординге до регистрации — не спрашиваем повторно.
+  async function step3Next(data) {
     const full = { ...regData, ...data }
+    setRegData(full)
+    await submitRegistration(full)
+  }
+
+  async function submitRegistration(full) {
+    const sawOnboarding = readLocal('onboarding_seen') === '1'
+    const homeRoute = sawOnboarding ? '/home' : '/onboarding'
     setError(''); setLoading(true); setStatus('Создаём аккаунт...')
 
     try {
@@ -86,11 +109,15 @@ export default function AuthPage() {
         if (signUpErr.message?.includes('already registered') || signUpErr.message?.includes('already been registered')) {
           setStatus('Аккаунт уже создан, входим...')
           try {
-            const { error: loginErr } = await withTimeout(
+            const { data: retryData, error: loginErr } = await withTimeout(
               supabase.auth.signInWithPassword({ email: full.email, password: full.password }),
               20000,
             )
-            if (!loginErr) { navigate('/onboarding'); return }
+            if (!loginErr) {
+              trackEvent('login_completed', { via: 'signup_retry' }, retryData?.user?.id)
+              navigate(homeRoute)
+              return
+            }
           } catch {}
           // Авто-вход не удался (например, пароль изменился) — просим войти вручную
           setEmail(full.email)
@@ -116,14 +143,16 @@ export default function AuthPage() {
           gender:         full.gender         || null,
           nur:            10,
           streak:         1,
-          onboarded:      false
+          onboarded:      sawOnboarding
         }).select().single(),
         28000,
       )
       if (profileErr) { setError('Ошибка сохранения профиля'); return }
       setProfile(newProfile)
 
-      navigate('/onboarding')
+      trackEvent('signup_completed', { level: full.level || 'seeker' }, authData.user.id)
+      try { localStorage.removeItem('pending_level'); localStorage.removeItem('onboarding_seen') } catch {}
+      navigate(homeRoute)
     } catch {
       setError('Сервер отвечает медленно. Нажмите "Создать аккаунт" ещё раз — если email уже занят, значит аккаунт создан, и можно войти.')
     } finally {
@@ -131,7 +160,11 @@ export default function AuthPage() {
     }
   }
 
-  const switchTab = t => { setTab(t); setError(''); setRegStep(1); setRegData({}) }
+  const switchTab = t => {
+    setTab(t); setError(''); setRegStep(1)
+    const level = readLocal('pending_level')
+    setRegData(level ? { level, language: 'ru', translationId: 131 } : {})
+  }
 
   return (
     <div style={s.page}>
@@ -184,13 +217,17 @@ export default function AuthPage() {
           ) : (
             <div style={s.form}>
               <div className="progress-dots">
-                {[1,3,4].map(n => (
+                {[1,3].map(n => (
                   <div key={n} className={`dot ${regStep === n ? 'active' : ''}`} />
                 ))}
               </div>
               {regStep === 1 && <RegisterStep1 data={regData} onNext={step1Next} />}
-              {regStep === 3 && <RegisterStep3Gender data={regData} onNext={step3Next} onBack={() => setRegStep(1)} />}
-              {regStep === 4 && <RegisterStep3 onNext={step4Next} onBack={() => setRegStep(3)} loading={loading} status={status} />}
+              {regStep === 3 && (
+                <RegisterStep3Gender
+                  data={regData} onNext={step3Next} onBack={() => setRegStep(1)}
+                  loading={loading} status={status}
+                />
+              )}
             </div>
           )}
         </div>
