@@ -53,12 +53,92 @@ async function cacheVideoInBackground(fileName, remoteUrl) {
   }
 }
 
+// Основной домен (nurhayat.ru) — обход блокировки supabase.co у части
+// провайдеров РФ. Но если у пользователя, наоборот, включён VPN — именно
+// nurhayat.ru может внезапно стать недоступен (маршрутизация/фильтрация
+// самого VPN), а обычные запросы к БД/авторизации при этом продолжают
+// работать через тот же домен без проблем, поэтому кажется что "сломались
+// только видео". Резервный путь — напрямую к supabase.co с тем же токеном
+// пользователя, только для получения ссылки на видео.
+const SUPABASE_URL_FALLBACK = 'https://qnkgvsxjxjfmjopnzmdu.supabase.co'
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON
+
+async function createSignedUrlFallback(storagePath) {
+  try {
+    const { data: { session }, error: sessErr } = await supabase.auth.getSession()
+    if (sessErr) console.error('[Video] fallback getSession error:', sessErr.message)
+    if (!session?.access_token) { console.warn('[Video] fallback: no active session, skipping'); return null }
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8000)
+    const res = await fetch(`${SUPABASE_URL_FALLBACK}/storage/v1/object/sign/${LETTER_VIDEOS_BUCKET}/${storagePath}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_ANON,
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ expiresIn: 3600 }),
+      signal: controller.signal,
+    }).finally(() => clearTimeout(timer))
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.error('[Video] fallback sign failed:', res.status, body)
+      return null
+    }
+    const json = await res.json()
+    return json.signedURL ? `${SUPABASE_URL_FALLBACK}/storage/v1${json.signedURL}` : null
+  } catch (e) {
+    console.error('[Video] fallback threw:', e?.message || e)
+    return null
+  }
+}
+
+async function getPrimarySignedUrl(storagePath) {
+  try {
+    const { data, error } = await supabase.storage.from(LETTER_VIDEOS_BUCKET).createSignedUrl(storagePath, 3600)
+    if (error) console.error('[Video] createSignedUrl error:', error.message, storagePath)
+    return data?.signedUrl ?? null
+  } catch (e) {
+    console.error('[Video] createSignedUrl threw:', e?.message || e, storagePath)
+    return null
+  }
+}
+
+// Ждёт несколько промисов и берёт первый УСПЕШНЫЙ результат (не первый
+// завершившийся вообще — null от быстрого, но неудачного пути не должен
+// побеждать медленный, но рабочий).
+function firstSuccessful(promises) {
+  return new Promise(resolve => {
+    let remaining = promises.length
+    let done = false
+    promises.forEach(p => p.then(v => {
+      remaining--
+      if (done) return
+      if (v) { done = true; resolve(v) }
+      else if (remaining === 0) resolve(null)
+    }))
+  })
+}
+
 async function resolveVideoUrl(storagePath, fileName) {
   const cached = await getCachedVideoPath(fileName)
   if (cached) return cached
 
-  const { data } = await supabase.storage.from(LETTER_VIDEOS_BUCKET).createSignedUrl(storagePath, 3600)
-  const remoteUrl = data?.signedUrl ?? null
+  const primaryPromise = getPrimarySignedUrl(storagePath)
+
+  // "Hedged request": раньше сначала ждали основной путь ПОЛНОСТЬЮ (его
+  // тайм-аут до 20 сек), и только потом, если не вышло, пробовали резервный
+  // — в худшем случае они складывались и ожидание растягивалось на минуты.
+  // Теперь если основной не ответил за 3 сек, параллельно подключаем
+  // резервный (напрямую к supabase.co) и берём то, что придёт раньше.
+  const early = await Promise.race([
+    primaryPromise,
+    new Promise(r => setTimeout(() => r('__pending__'), 3000)),
+  ])
+  const remoteUrl = early !== '__pending__'
+    ? early
+    : await firstSuccessful([primaryPromise, createSignedUrlFallback(storagePath)])
+
   if (remoteUrl) cacheVideoInBackground(fileName, remoteUrl) // не ждём — играем сразу по сети, кэшируем параллельно
   return remoteUrl
 }
@@ -172,6 +252,7 @@ export default function QuranAlphabet({ onClose }) {
   })
   const [videoExpanded, setVideoExpanded] = useState(false)
   const [videoSrc, setVideoSrc] = useState(null) // подписанный URL для текущей буквы
+  const [videoLoading, setVideoLoading] = useState(false)
   const [modalVideo, setModalVideo] = useState(null) // { url, title } | null — для видео сравнения похожих букв и раздела "Практика"
   const [showQuiz, setShowQuiz] = useState(false)
   const audioRef = useRef(null)
@@ -251,10 +332,15 @@ export default function QuranAlphabet({ onClose }) {
   }, [item])
   // Подписанная ссылка на видео буквы
   useEffect(() => {
-    if (!item?.id) { setVideoSrc(null); return }
+    if (!item?.id) { setVideoSrc(null); setVideoLoading(false); return }
     let cancelled = false
     setVideoSrc(null)
-    getLetterVideoUrl(item.id).then(url => { if (!cancelled) setVideoSrc(url) })
+    setVideoLoading(true)
+    getLetterVideoUrl(item.id).then(url => {
+      if (cancelled) return
+      setVideoSrc(url)
+      setVideoLoading(false)
+    })
     return () => { cancelled = true }
   }, [item])
   useEffect(() => () => stopAudio(), [])
@@ -503,6 +589,12 @@ export default function QuranAlphabet({ onClose }) {
                   <div style={{ ...s.mediaSquarePlay, borderColor: mc }}>▶</div>
                   <span style={s.mediaSquareCaption}>Видео</span>
                 </button>
+              )}
+              {videoLoading && !videoSrc && videoError !== l.id && (
+                <div style={{ ...s.mediaSquare, borderColor: mc + '30' }}>
+                  <span style={{ fontSize: 18 }}>⏳</span>
+                  <span style={s.mediaSquareCaption}>Загрузка…</span>
+                </div>
               )}
               {videoError === l.id && (
                 <button style={{ ...s.mediaSquare, borderColor: 'rgba(255,90,90,.4)' }} onClick={() => setVideoError(null)}>
