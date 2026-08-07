@@ -211,6 +211,7 @@ function MilestoneListener() {
 function BackButtonHandler() {
   const navigate = useNavigate()
   const lastBackRef = useRef(0)
+  const [showExitHint, setShowExitHint] = useState(false)
 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return
@@ -225,15 +226,32 @@ function BackButtonHandler() {
       if (now - lastBackRef.current < 2000) {
         CapApp.exitApp()
       } else {
+        // Первое нажатие на корневом экране — не блокируем весь экран
+        // диалогом, просто мягкая подсказка. Повторное нажатие в течение
+        // 2 секунд выходит из приложения — как в большинстве приложений.
         lastBackRef.current = now
-        CapApp.minimizeApp()
+        setShowExitHint(true)
+        setTimeout(() => setShowExitHint(false), 2000)
       }
     })
 
     return () => { handler.then(h => h.remove()) }
   }, [navigate])
 
-  return null
+  if (!showExitHint) return null
+  return (
+    <div style={{
+      position: 'fixed', left: '50%', bottom: 'calc(var(--safe-bottom) + 78px)',
+      transform: 'translateX(-50%)', zIndex: 9998,
+      background: 'rgba(20,20,28,.92)', color: '#fff',
+      fontSize: 13, fontFamily: 'var(--font-ui)',
+      padding: '10px 18px', borderRadius: 20,
+      boxShadow: '0 4px 16px rgba(0,0,0,.35)', pointerEvents: 'none',
+      whiteSpace: 'nowrap',
+    }}>
+      Нажмите «Назад» ещё раз для выхода
+    </div>
+  )
 }
 
 export default function App() {

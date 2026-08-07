@@ -701,7 +701,7 @@ export default function HomePage() {
                 <div style={s.streakMotiv}>{current.text}</div>
               )}
               {!current && streak === 0 && (
-                <div style={s.streakMotiv}>Соверши первый намаз сегодня — и серия начнётся 🌱</div>
+                <div style={s.streakMotiv}>Соверши сегодня все 5 намазов — и серия начнётся 🌱</div>
               )}
               {!current && streak > 0 && (
                 <div style={s.streakMotiv}>Продолжай — до первой вехи осталось {3 - streak} дн.</div>

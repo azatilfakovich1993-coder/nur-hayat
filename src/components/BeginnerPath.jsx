@@ -14,6 +14,7 @@ import PillarsOfIslam from './PillarsOfIslam'
 import QandAQuiz      from './QandAQuiz'
 import { SURAHS }     from '../data/surahs-learn'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import { useBackHandler } from '../hooks/useBackHandler'
 
 // ── Определение шагов ────────────────────────────────────────────────────────
 const STEPS = [
@@ -330,6 +331,8 @@ function handleMarkDoneRequest(step) {
       addNur(200, user, profile, setProfile) // бонус за завершение пути
     }
   }
+
+  useBackHandler(openSection !== null, () => setOpenSection(null), { base: true })
 
   const doneCount   = STEPS.filter(st => isDone(st)).length
   const pct         = Math.round((doneCount / STEPS.length) * 100)
@@ -973,6 +976,84 @@ export function BeginnerPathWidget({ onOpen }) {
       )}
     </div>
   )
+}
+
+// ── Единый список пути для seeker в разделе "Знания" ───────────────────────────
+// Раньше здесь были отдельно виджет-прогресс И список "Для начинающих" с тем же
+// контентом — дублирование. Теперь один список = 7 реальных шагов пути с
+// состоянием на каждом (✓ пройдено / текущий с кнопкой действия / ○ впереди).
+export function BeginnerPathList({ onOpen }) {
+  const { user } = useAuth()
+  const auto   = getAutoComplete()
+  const manual = loadProgress(user?.id)
+
+  function isDoneStep(st) {
+    if (!st.manual) return st.id === 'alphabet' ? auto.alphabet : auto.fatiha
+    return !!manual[st.id]
+  }
+
+  const visibleSteps = STEPS.filter(st => st.id !== 'quiz')
+  const doneCount = visibleSteps.filter(isDoneStep).length
+  const currentIdx = visibleSteps.findIndex(st => !isDoneStep(st))
+
+  return (
+    <>
+      <div style={pl.headRow}>
+        <span style={pl.headStep}>Шаг {Math.min(doneCount + 1, visibleSteps.length)} из {visibleSteps.length}</span>
+      </div>
+      {visibleSteps.map((st, i) => {
+        const done = isDoneStep(st)
+        const isCurrent = !done && i === currentIdx
+        const state = done ? 'done' : isCurrent ? 'cur' : 'next'
+        return (
+          <button key={st.id} style={{ ...pl.row, ...pl[`row_${state}`] }} onClick={onOpen}>
+            <div style={{ ...pl.rowIcon, ...pl[`rowIcon_${state}`] }}>{st.icon}</div>
+            <div style={pl.rowBody}>
+              <div style={{ ...pl.rowTitle, ...pl[`rowTitle_${state}`] }}>{st.title}</div>
+              <div style={{ ...pl.rowSub, ...pl[`rowSub_${state}`] }}>
+                {done ? 'Пройдено' : st.desc}
+              </div>
+            </div>
+            {state === 'done'   && <span style={pl.stateDone}>✓</span>}
+            {state === 'cur'    && <span style={pl.stateCur}>{st.action} →</span>}
+            {state === 'next'   && <span style={pl.stateNext}>○</span>}
+          </button>
+        )
+      })}
+    </>
+  )
+}
+
+const pl = {
+  headRow: { marginBottom: 8 },
+  headStep: { fontSize: 11, fontWeight: 700, color: 'rgba(201,168,76,.7)', textTransform: 'uppercase', letterSpacing: '.06em' },
+  row: {
+    width: '100%', display: 'flex', alignItems: 'center', gap: 11, borderRadius: 16,
+    padding: '11px 12px', marginBottom: 7, cursor: 'pointer', outline: 'none', textAlign: 'left',
+    fontFamily: 'var(--font-ui)', border: '1px solid',
+  },
+  row_done: { background: 'var(--bg-card)', borderColor: 'var(--border)', opacity: .72 },
+  row_cur:  { background: 'linear-gradient(135deg,rgba(201,168,76,.13),rgba(201,168,76,.04))', borderColor: 'rgba(201,168,76,.4)', boxShadow: '0 0 12px rgba(201,168,76,.15)' },
+  row_next: { background: 'var(--bg-card)', borderColor: 'var(--border)', opacity: .45 },
+  rowIcon: { width: 36, height: 36, borderRadius: 10, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15 },
+  rowIcon_done: { background: 'rgba(82,183,136,.14)', color: '#52b788' },
+  rowIcon_cur:  { background: 'rgba(201,168,76,.18)', color: 'var(--gold)' },
+  rowIcon_next: { background: 'rgba(255,255,255,.05)', color: 'var(--text-dim)' },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowTitle: { fontSize: 13.5, fontWeight: 700 },
+  rowTitle_done: { color: 'var(--text)' },
+  rowTitle_cur:  { color: 'var(--text)' },
+  rowTitle_next: { color: 'var(--text-muted)' },
+  rowSub: { fontSize: 10.5, marginTop: 1, lineHeight: 1.4 },
+  rowSub_done: { color: 'var(--text-dim)' },
+  rowSub_cur:  { color: 'var(--text-muted)' },
+  rowSub_next: { color: 'var(--text-dim)' },
+  stateDone: { fontSize: 15, color: '#52b788', flexShrink: 0 },
+  stateCur: {
+    fontSize: 11, fontWeight: 700, color: '#fff', flexShrink: 0,
+    background: 'linear-gradient(135deg,#9a6a10,#c9a84c)', borderRadius: 10, padding: '6px 11px',
+  },
+  stateNext: { fontSize: 14, color: 'var(--text-dim)', flexShrink: 0 },
 }
 
 // ── Виджет растущего / соблюдающего (growing / practicing) ────────────────────

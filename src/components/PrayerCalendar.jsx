@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase/client'
+import { useBackHandler } from '../hooks/useBackHandler'
 
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
 const PRAYER_RU    = { Fajr:'Фаджр', Dhuhr:'Зухр', Asr:'Аср', Maghrib:'Магриб', Isha:'Иша' }
@@ -22,6 +23,8 @@ export default function PrayerCalendar({ user, onClose }) {
   const [byDate,   setByDate]   = useState({})
   const [loading,  setLoading]  = useState(true)
   const [selected, setSelected] = useState(null)
+
+  useBackHandler(!!selected, () => setSelected(null))
 
   useEffect(() => { fetchMonth() }, [year, month])
 

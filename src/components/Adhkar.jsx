@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { ADHKAR, DAILY_DHIKR } from '../data/adhkar'
 
 // Зикр дня меняется каждый день
@@ -14,6 +15,8 @@ export default function Adhkar({ onClose }) {
   const [counts,   setCounts]   = useState({})   // id → сколько раз нажато
   const [current,  setCurrent]  = useState(0)    // индекс активной карточки
   const [done,     setDone]     = useState(false)
+
+  useBackHandler(done, () => setDone(false))
 
   const list = ADHKAR[tab]
   const total = list.length

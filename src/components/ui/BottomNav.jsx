@@ -26,7 +26,7 @@ export default function BottomNav() {
           <button
             key={tab.path}
             style={{ ...s.btn, color: isActive ? 'var(--gold)' : 'var(--text-dim)' }}
-            onClick={() => navigate(tab.path)}
+            onClick={() => navigate(tab.path, { replace: true })}
           >
             <div style={{ position: 'relative', lineHeight: 1 }}>
               <span style={{ fontSize: 21, lineHeight: 1 }}>{tab.icon}</span>

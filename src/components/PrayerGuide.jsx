@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useSwipeCards } from '../hooks/useSwipeCards'
+import { useBackHandler } from '../hooks/useBackHandler'
 import DawnLandscape from './DawnLandscape'
 import { useStepProgress } from '../hooks/useStepProgress'
 import {
@@ -357,6 +358,12 @@ export default function PrayerGuide({ onClose }) {
   const [autoPlay,     setAutoPlay]  = useState(false)
   const [openRakaat,   setOpenRakaat] = useState(null)   // null | 2 | 3 | 4
   const [showRakaats,  setShowRakaats] = useState(false)
+
+  useBackHandler(tab === 'wudu' && wuduSection !== null, () => setWuduSection(null))
+  useBackHandler(tab === 'intro' && introSection !== null, () => setIntroSection(null))
+  useBackHandler(tab === 'prayers' && prayerSection !== null, () => setPrayerSection(null))
+  useBackHandler(tab === 'steps' && showRakaats, () => setShowRakaats(false))
+  useBackHandler(showQuiz, closeQuiz)
 
   const NAMAZ_STEPS = PRAYER_STEPS.filter(s => s.id !== 'wudu')
   const step = NAMAZ_STEPS[stepIdx]

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { SURAHS } from '../data/surahs-learn'
 import { SURAS } from '../data/suras'
 import { useAuth } from '../hooks/useAuth'
@@ -155,6 +156,8 @@ export default function SurahLearn({ onClose }) {
     if (selected) { setSelected(null); return }
     onClose()
   }
+
+  useBackHandler(true, back)
 
   const surah = selected
   const verse = surah ? surah.verses[verseIdx] : null

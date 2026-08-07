@@ -35,7 +35,7 @@ serve(async (req) => {
 
   const { data: schedules, error: schedulesErr } = await supabase
     .from('prayer_schedules')
-    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled')
+    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled, local_scheduled_date')
 
   if (schedulesErr) console.error('[check-prayers] schedules query failed:', schedulesErr)
   if (!schedules?.length) {
@@ -95,7 +95,8 @@ serve(async (req) => {
     // пользователя, они идут в коде ниже намазов) молча не обрабатывались.
     try {
     const { user_id, timings, remind_before, utc_offset,
-            prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled } = schedule
+            prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled,
+            local_scheduled_date } = schedule
 
     const { data: tokens } = await supabase
       .from('push_tokens')
@@ -104,8 +105,20 @@ serve(async (req) => {
 
     if (!tokens?.length) continue
 
+    // На Android телефон сам ставит локальные будильники на намаз, пока
+    // приложение открывалось сегодня (см. PrayerPage.jsx) — раньше сервер
+    // слал push независимо от этого, и Android-пользователь гарантированно
+    // получал двойное уведомление на каждое событие намаза. Если телефон
+    // уже отметился (local_scheduled_date = сегодня по его локальному
+    // времени), для намазов не шлём на android-токены — только на
+    // web/ios, у которых локального будильника нет. Азкары не трогаем —
+    // для них локального будильника нет вообще ни на одной платформе.
+    const userLocalToday = new Date(now.getTime() + (utc_offset as number) * 60000).toISOString().slice(0, 10)
+    const localCoversToday = local_scheduled_date === userLocalToday
+    const prayerTokens = localCoversToday ? tokens.filter(t => t.platform !== 'android') : tokens
+
     // ── Уведомления намазов ──────────────────────────────────
-    if (prayer_notif_enabled !== false && timings) {
+    if (prayer_notif_enabled !== false && timings && prayerTokens.length > 0) {
       for (const [prayerId, localTimeStr] of Object.entries(timings as Record<string, string>)) {
         const name = PRAYER_NAMES[prayerId]
         if (!name) continue
@@ -126,7 +139,7 @@ serve(async (req) => {
               url:   '/prayer',
               tag,
             }
-            sent += await sendToUser(user_id, payload, tokens)
+            sent += await sendToUser(user_id, payload, prayerTokens)
           }
         }
 
@@ -139,7 +152,7 @@ serve(async (req) => {
             url:   '/prayer',
             tag:   atTimeTag,
           }
-          sent += await sendToUser(user_id, payload, tokens)
+          sent += await sendToUser(user_id, payload, prayerTokens)
         }
       }
     }

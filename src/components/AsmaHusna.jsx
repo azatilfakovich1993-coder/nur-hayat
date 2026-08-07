@@ -1,11 +1,14 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { ASMA_HUSNA } from '../data/asmaul-husna'
 
 export default function AsmaHusna({ onClose }) {
   const swipe    = useSwipeDown(onClose)
   const [search,   setSearch]   = useState('')
   const [selected, setSelected] = useState(null)
+
+  useBackHandler(!!selected, () => setSelected(null))
 
   const filtered = search.trim()
     ? ASMA_HUSNA.filter(n =>

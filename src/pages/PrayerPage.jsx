@@ -6,6 +6,7 @@ import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
 import { fetchTimings } from '../utils/prayerTimes'
 import { rewardFeedback, tapFeedback } from '../utils/feedback'
+import { clearAllTimers, pushTimer, cancelPrayerNotifs } from '../utils/prayerNotifs'
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
@@ -122,9 +123,6 @@ function sendNotif(title, body) {
   }
 }
 
-const timerIds = []
-function clearAllTimers() { timerIds.forEach(clearTimeout); timerIds.length = 0 }
-
 // prayerIndex * 100 + reminderMins = notification ID
 // Например: Fajr(0)*100+10 = 10, Asr(2)*100+20 = 220
 //
@@ -140,18 +138,14 @@ function scheduleNotifs(prayerTimes, notifBefore) {
   scheduleQueue = scheduleQueue.then(() => doScheduleNotifs(prayerTimes, notifBefore))
   return scheduleQueue
 }
+
 async function doScheduleNotifs(prayerTimes, notifBefore) {
   clearAllTimers()
   const now = new Date()
   const reminders = notifBefore.filter(Boolean)
 
   if (Capacitor.isNativePlatform()) {
-    // Отменяем старые уведомления намазов (ID 0–499)
-    try {
-      const { notifications: pending } = await LocalNotifications.getPending()
-      const toCancel = pending.filter(n => n.id < 500).map(n => ({ id: n.id }))
-      if (toCancel.length > 0) await LocalNotifications.cancel({ notifications: toCancel })
-    } catch {}
+    await cancelPrayerNotifs()
 
     const notifications = []
     prayerTimes.forEach((p, pIdx) => {
@@ -197,11 +191,11 @@ async function doScheduleNotifs(prayerTimes, notifBefore) {
   prayerTimes.forEach(p => {
     const pt = parseTime(p.time)
     const delay0 = pt - now
-    if (delay0 > 0) timerIds.push(setTimeout(() =>
+    if (delay0 > 0) pushTimer(setTimeout(() =>
       sendNotif(`🕌 Время ${p.ru}!`, `Настало время ${p.desc.toLowerCase()} намаза`), delay0))
     reminders.forEach(mins => {
       const delay = pt - mins * 60000 - now
-      if (delay > 0) timerIds.push(setTimeout(() =>
+      if (delay > 0) pushTimer(setTimeout(() =>
         sendNotif(`🔔 До ${p.ru} — ${mins} мин`, `Намаз в ${fmt(p.time)}`), delay))
     })
   })
@@ -1378,6 +1372,7 @@ export default function PrayerPage() {
   async function togglePrayerPush() {
     const next = !prayerPushEnabled
     setPrayerPushEnabled(next)
+    if (!next) cancelPrayerNotifs()
     if (!user) return
     const { error } = await supabase.from('prayer_schedules').upsert(
       { user_id: user.id, prayer_notif_enabled: next },
@@ -1390,10 +1385,26 @@ export default function PrayerPage() {
   useEffect(() => {
     if (timings && notifOk && prayerPushEnabled) {
       const pts = PRAYERS.map(p => ({ ...p, time: timings[p.id] })).filter(p => p.time)
-      scheduleNotifs(pts, remind)
+      scheduleNotifs(pts, remind).then(() => {
+        // Отмечаем на сервере, что телефон сам поставил будильники на
+        // сегодня — check-prayers это проверяет и не шлёт для намазов
+        // дублирующий push тем, у кого локальные уведомления уже покрывают
+        // сегодняшний день (раньше слал всегда, независимо от телефона —
+        // отсюда гарантированный дубль на каждое событие для Android).
+        if (Capacitor.isNativePlatform() && user) {
+          supabase.from('prayer_schedules').upsert(
+            { user_id: user.id, local_scheduled_date: localDateStr() },
+            { onConflict: 'user_id' }
+          ).then(({ error }) => {
+            if (error) console.warn('[Prayer] local_scheduled_date sync failed:', error.message)
+          })
+        }
+      })
+    } else if (prayerPushEnabled === false) {
+      cancelPrayerNotifs()
     }
     return () => clearAllTimers()
-  }, [timings, notifOk, remind, prayerPushEnabled])
+  }, [timings, notifOk, remind, prayerPushEnabled, user?.id])
 
   // Сохраняем расписание намазов на сервер (для push-уведомлений когда приложение закрыто)
   useEffect(() => {

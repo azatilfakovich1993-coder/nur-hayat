@@ -7,6 +7,7 @@ import { useTheme } from '../App'
 import { supabase } from '../supabase/client'
 import { scheduleDailyVerseNotifs, cancelDailyVerseNotifs } from '../hooks/useDailyVerseNotif'
 import { scheduleIslamicHolidayNotifs, cancelIslamicHolidayNotifs } from '../hooks/useIslamicHolidayNotif'
+import { cancelPrayerNotifs } from '../utils/prayerNotifs'
 import { SURAS } from '../data/suras'
 import { TRANSLITERATIONS, ARABIC_TEXTS, FALLBACK_TRANSLATIONS } from '../data/verses'
 import { getNurLevel } from '../utils/nur'
@@ -209,6 +210,7 @@ export default function ProfilePage() {
     setNotifPrayer(next)
     localStorage.setItem('notif_prayer', String(next))
     saveNotifSettings({ prayer_notif_enabled: next })
+    if (!next) cancelPrayerNotifs()
   }
 
   async function toggleAzkarNotif() {
@@ -220,6 +222,15 @@ export default function ProfilePage() {
     setNotifAzkar(next)
     localStorage.setItem('notif_azkar', String(next))
     saveNotifSettings({ azkar_notif_enabled: next })
+    // Тумблер сам по себе ничего не шлёт — сервер требует ещё и заполненное
+    // время утреннего/вечернего азкара ниже. Раньше можно было включить
+    // тумблер, оставить оба времени пустыми и не получить ни одного
+    // уведомления без единого намёка, почему. Подставляем разумные значения
+    // по умолчанию, если поля ещё не заполнены — пользователь может поправить.
+    if (next) {
+      if (!notifMorning) saveTime('notif_morning', '06:00', setNotifMorning, 'morning_adhkar_time')
+      if (!notifEvening) saveTime('notif_evening', '17:00', setNotifEvening, 'evening_adhkar_time')
+    }
   }
 
   async function toggleDailyVerseNotif() {
@@ -502,6 +513,9 @@ export default function ProfilePage() {
               <div style={{ ...s.toggleThumb, transform: notifAzkar ? 'translateX(22px)' : 'translateX(0)' }} />
             </button>
           </div>
+          {notifAzkar && (!notifMorning || !notifEvening) && (
+            <div style={s.azkarTimeWarn}>⚠️ Заполните оба времени ниже — иначе напоминание не придёт</div>
+          )}
           <div style={s.notifRow}>
             <div style={s.notifLeft}>
               <span style={s.notifIcon}>
@@ -1436,6 +1450,7 @@ const s = {
   notifIcon:  { fontSize:22, flexShrink:0 },
   notifName:  { fontSize:15, fontWeight:600, color:'var(--text)' },
   notifSub:   { fontSize:12, color:'var(--text-muted)', marginTop:2 },
+  azkarTimeWarn: { fontSize:11, color:'#e8a040', padding:'0 0 8px', lineHeight:1.4 },
   toggle: {
     width:48, height:26, borderRadius:13, border:'none',
     cursor:'pointer', position:'relative', transition:'background .25s', flexShrink:0,

@@ -11,20 +11,20 @@ import RamadanGuide   from '../components/RamadanGuide'
 import SurahLearn     from '../components/SurahLearn'
 import QuranAlphabet  from '../components/QuranAlphabet'
 import QandA          from '../components/QandA'
-import BeginnerPath, { BeginnerPathWidget, BeginnerPathHintCard, shouldShowBeginnerHint } from '../components/BeginnerPath'
+import BeginnerPath, { BeginnerPathList } from '../components/BeginnerPath'
 import Glossary      from '../components/Glossary'
 import Prophets     from '../components/Prophets'
 import QandAQuiz    from '../components/QandAQuiz'
 
 const BEGINNER_ITEMS = [
   { id: 'qa',       icon: '❓', title: 'Вопросы и ответы',  sub: 'Достоверные ответы на частые вопросы начинающих' },
-  { id: 'prophets', icon: '🌙', title: 'Истории пророков',  sub: 'Адам, Нух, Ибрахим, Муса, Иса, Мухаммад ﷺ' },
   { id: 'alphabet', icon: '🔤', title: 'Арабский алфавит',  sub: 'Буквы, махрадж, харакаты — по методу Муаллим Сани' },
   { id: 'surahs',   icon: '📚', title: 'Разучивание сур',   sub: 'Фатиха, Ихлас, Фалак, Нас — аят за аятом' },
   { id: 'guide',    icon: '🕌', title: 'Как читать намаз',  sub: 'Пошаговый гид с фото и вуду' },
 ]
 
 const KNOWLEDGE_ITEMS = [
+  { id: 'prophets', icon: '🌙', title: 'Истории пророков',  sub: 'Адам, Нух, Ибрахим, Муса, Иса, Мухаммад ﷺ' },
   { id: 'adhkar',   icon: '📿', title: 'Азкары',             sub: 'Утренние и вечерние зикры' },
   { id: 'duas',     icon: '🤲', title: 'Дуа',                 sub: 'Молитвы из Корана и Сунны' },
   { id: 'asma',     icon: '✨', title: '99 имён Аллаха',     sub: 'Асмауль-Хусна с описанием' },
@@ -90,7 +90,6 @@ export default function LearnPage() {
   const [open, setOpen] = useState(null)
   const [qaId, setQaId] = useState(null)
   const [calendarEventId, setCalendarEventId] = useState(null)
-  const [showBeginnerHint, setShowBeginnerHint] = useState(shouldShowBeginnerHint)
   const navigate = useNavigate()
   const location = useLocation()
   const { profile } = useAuth()
@@ -109,7 +108,7 @@ export default function LearnPage() {
   // Экраны знаний (алфавит, вуду и т.п.) открываются через состояние, а не
   // роут — без этого аппаратная кнопка "назад" не знает про них и улетает
   // сразу на Главную вместо возврата в список "Знаний"
-  useBackHandler(open !== null, () => { setOpen(null); setQaId(null) })
+  useBackHandler(open !== null, () => { setOpen(null); setQaId(null) }, { base: true })
 
   return (
     <div style={s.wrap}>
@@ -127,28 +126,26 @@ export default function LearnPage() {
       {/* Список */}
       <div style={s.list} className="scroll-y">
 
-        {/* 1. Путь новичка */}
-        {isSeeker && (
+        {/* 1. Путь новичка — только у seeker, это его основной путь.
+            Один список из 7 реальных шагов пути с отметкой состояния на
+            каждом (✓ пройдено / текущий с кнопкой / ○ впереди) — раньше тут
+            был отдельный виджет-прогресс ПЛЮС список "Для начинающих" ниже
+            с тем же контентом, дублирование.
+            Для growing/practicing приглашение "по желанию" живёт только на
+            Главной, здесь не дублируется. */}
+        {isSeeker ? (
           <>
             <div style={s.sectionLabel}>Путь новичка</div>
-            <BeginnerPathWidget onOpen={() => setOpen('path')} />
+            <BeginnerPathList onOpen={() => setOpen('path')} />
           </>
-        )}
-        {!isSeeker && showBeginnerHint && (
+        ) : (
           <>
-            <div style={s.sectionLabel}>Путь новичка</div>
-            <BeginnerPathHintCard
-              onOpen={() => setOpen('path')}
-              onHide={() => setShowBeginnerHint(false)}
-            />
+            <div style={{ ...s.sectionLabel, marginTop: 6 }}>Для начинающих</div>
+            {BEGINNER_ITEMS.map(item => (
+              <ItemCard key={item.id} item={item} accent="gold" onOpen={setOpen} />
+            ))}
           </>
         )}
-
-        {/* 2. Для начинающих */}
-        <div style={{ ...s.sectionLabel, marginTop: isSeeker || (!isSeeker && showBeginnerHint) ? 10 : 6 }}>Для начинающих</div>
-        {BEGINNER_ITEMS.map(item => (
-          <ItemCard key={item.id} item={item} accent="gold" onOpen={setOpen} />
-        ))}
 
         {/* 3. Знания и ибадат */}
         <div style={{ ...s.sectionLabel, marginTop: 10 }}>Знания и ибадат</div>

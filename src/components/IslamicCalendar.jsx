@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { ISLAMIC_EVENTS, EVENTS_BY_YEAR } from '../data/islamic-calendar'
 
 const MONTHS_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
@@ -51,6 +52,8 @@ export default function IslamicCalendar({ onClose, initialEventId }) {
   const [year,     setYear]     = useState(initialSelected?.year || currentYear)
   const [selected, setSelected] = useState(initialSelected)
   const [detailTab, setDetailTab] = useState('whatToDo')
+
+  useBackHandler(!!selected, () => setSelected(null))
 
   const yearEvents = EVENTS_BY_YEAR[year] || []
 

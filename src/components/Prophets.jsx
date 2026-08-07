@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
+import { useBackHandler } from '../hooks/useBackHandler'
 import { PROPHETS } from '../data/prophets'
 import QandAQuiz from './QandAQuiz'
 
@@ -7,6 +8,9 @@ export default function Prophets({ onClose }) {
   const swipe    = useSwipeDown(onClose)
   const [selected, setSelected] = useState(null)
   const [showQuiz, setShowQuiz] = useState(false)
+
+  useBackHandler(!!selected && !showQuiz, () => setSelected(null))
+  useBackHandler(showQuiz, () => setShowQuiz(false))
 
   if (showQuiz) {
     return <QandAQuiz category="Пророки" onClose={() => setShowQuiz(false)} />

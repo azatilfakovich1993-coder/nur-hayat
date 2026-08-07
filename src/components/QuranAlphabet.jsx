@@ -413,19 +413,10 @@ export default function QuranAlphabet({ onClose }) {
             <span style={s.videoArrow}>›</span>
           </button>
 
-          <a
-            href="https://www.youtube.com/watch?v=mjySnzjBeBY&list=PLK_aw3CMJI1Kbyua963S9xpFEQc8rQDSY"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={s.videoCard}
-          >
-            <div style={s.videoIcon}>▶</div>
-            <div style={s.videoBody}>
-              <div style={s.videoTitle}>Видеоуроки по арабскому алфавиту</div>
-              <div style={s.videoSub}>Правильное произношение букв — основа чтения Корана. Одна неверно произнесённая буква может изменить смысл слова. Настоятельно рекомендуем пройти плейлист — 39 видеоуроков с разбором каждой буквы и примерами</div>
-            </div>
-            <span style={s.videoArrow}>›</span>
+          <a href="https://www.youtube.com/@Ruslan_Malikov" target="_blank" rel="noopener noreferrer" style={{ ...s.authorCredit, marginTop: 4 }}>
+            Видеоуроки: Руслан Маликов ↗
           </a>
+
           <div style={{ height: 24 }} />
         </div>
       )}
@@ -470,18 +461,8 @@ export default function QuranAlphabet({ onClose }) {
               )
             })}
           </div>
-          <a
-            href="https://www.youtube.com/watch?v=mjySnzjBeBY&list=PLK_aw3CMJI1Kbyua963S9xpFEQc8rQDSY"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ ...s.videoCard, margin: '12px 0 0' }}
-          >
-            <div style={s.videoIcon}>▶</div>
-            <div style={s.videoBody}>
-              <div style={s.videoTitle}>Видеоуроки по арабскому алфавиту</div>
-              <div style={s.videoSub}>Правильное произношение букв — основа чтения Корана. Одна неверно произнесённая буква может изменить смысл слова. Настоятельно рекомендуем пройти плейлист — 39 видеоуроков с разбором каждой буквы и примерами</div>
-            </div>
-            <span style={s.videoArrow}>›</span>
+          <a href="https://www.youtube.com/@Ruslan_Malikov" target="_blank" rel="noopener noreferrer" style={{ ...s.authorCredit, marginTop: 4 }}>
+            Видеоуроки: Руслан Маликов ↗
           </a>
           <div style={{ height: 24 }} />
         </div>
@@ -534,6 +515,11 @@ export default function QuranAlphabet({ onClose }) {
                 <span style={s.mediaSquareCaption}>{ttsActive ? 'Стоп' : 'Аудио'}</span>
               </button>
             </div>
+            {videoSrc && videoError !== l.id && (
+              <a href="https://www.youtube.com/@Ruslan_Malikov" target="_blank" rel="noopener noreferrer" style={s.authorCredit}>
+                Видео: Руслан Маликов ↗
+              </a>
+            )}
             {getSimilarGroupsForLetter(l.id).length > 0 && (
               <div style={s.mediaCol}>
                 {getSimilarGroupsForLetter(l.id).map(g => (
@@ -960,23 +946,13 @@ const s = {
     fontSize: 22, fontFamily: "'Scheherazade New',serif", direction: 'rtl',
   },
 
-  videoCard: {
-    display:'flex', alignItems:'center', gap:14,
-    borderRadius:16, border:'1.5px solid rgba(255,80,80,.35)',
-    background:'rgba(255,60,60,.08)', padding:'14px 16px',
-    textDecoration:'none', cursor:'pointer',
-  },
-  videoIcon: {
-    width:44, height:44, borderRadius:12, flexShrink:0,
-    background:'linear-gradient(135deg,#c0392b,#e74c3c)',
-    display:'flex', alignItems:'center', justifyContent:'center',
-    fontSize:18, color:'#fff',
-    boxShadow:'0 0 16px rgba(231,76,60,.5)',
-  },
   videoBody:  { flex:1 },
-  videoTitle: { fontSize:14, fontWeight:700, color:'#ff6b6b', marginBottom:3 },
   videoSub:   { fontSize:11, color:'var(--text-muted)', lineHeight:1.4 },
   videoArrow: { fontSize:22, color:'rgba(255,255,255,.2)', flexShrink:0 },
+  authorCredit: {
+    display:'block', fontSize:11, color:'var(--text-dim)',
+    textDecoration:'none', textAlign:'center', padding:'2px 0',
+  },
   quizCard: {
     display:'flex', alignItems:'center', gap:14, width:'100%', marginBottom:10,
     borderRadius:16, border:'1.5px solid rgba(160,125,232,.4)',
