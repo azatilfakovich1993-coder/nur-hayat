@@ -15,9 +15,14 @@ import { getFcmAccessToken, sendFcm } from '../_shared/fcm.ts'
 
 const PROXY_URL = Deno.env.get('PROXY_URL') ?? 'https://nurhayat.ru'
 const SERVICE_KEY = 'proxy'
+const CERT_KEY = 'proxy_cert'
 // Пока авария не устранена, повторяем напоминание не чаще раза в час —
 // иначе при пятиминутном cron это было бы 12 сообщений в час.
 const REALERT_MS = 60 * 60 * 1000
+// За сколько дней до истечения сертификата напоминать. Три ступени: одна
+// заранее, чтобы спокойно заняться, и две ближе к сроку — на случай, если
+// первое сообщение потерялось среди прочих.
+const CERT_WARN_DAYS = [14, 7, 1]
 
 type Check = { down: boolean; reason: string }
 
@@ -59,6 +64,23 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
     )
 
+    // После продления сертификата дату нужно обновить — это делается вызовом
+    // этой же функции с телом {"certExpiresOn":"ГГГГ-ММ-ДД"}. Отдельной ручки
+    // заводить не стали: сторож и так единственное место, которое про
+    // сертификат знает.
+    const payload = await req.json().catch(() => ({}))
+    if (payload?.certExpiresOn) {
+      await supabase.from('service_health').upsert(
+        { service: CERT_KEY, is_down: false, expires_on: payload.certExpiresOn, last_alert_at: null },
+        { onConflict: 'service' },
+      )
+      return new Response(JSON.stringify({ certExpiresOn: payload.certExpiresOn, saved: true }), {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    const certNote = await checkCertExpiry(supabase)
+
     const check = await checkProxy()
     const now = new Date()
 
@@ -84,7 +106,7 @@ serve(async (req) => {
     }
 
     if (!shouldAlert) {
-      return new Response(JSON.stringify({ down: check.down, alerted: false, reason: check.reason }), {
+      return new Response(JSON.stringify({ down: check.down, alerted: false, reason: check.reason, cert: certNote }), {
         headers: { 'Content-Type': 'application/json' },
       })
     }
@@ -115,6 +137,54 @@ serve(async (req) => {
     })
   }
 })
+
+// Предупреждение о скором истечении сертификата.
+//
+// Смысл в том, чтобы узнать ДО поломки. В августе сертификат продлился штатно,
+// новый выпустился — но сайт остался на старой самоподписанной заглушке, и
+// приложение оказалось отрезано от сервера на несколько часов. Само продление
+// при этом было не виновато. Поэтому напоминание говорит не "продли", а
+// "проверь, что сайт отдаёт именно новый сертификат".
+async function checkCertExpiry(supabase: any): Promise<string> {
+  const { data } = await supabase
+    .from('service_health')
+    .select('expires_on, last_alert_at')
+    .eq('service', CERT_KEY)
+    .maybeSingle()
+
+  if (!data?.expires_on) return 'дата не задана'
+
+  const today = new Date()
+  const expires = new Date(data.expires_on + 'T00:00:00Z')
+  const daysLeft = Math.ceil((expires.getTime() - Date.UTC(
+    today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())) / 86400000)
+
+  // Порог пройден, если до срока осталось не больше очередной ступени.
+  const threshold = CERT_WARN_DAYS.find(d => daysLeft <= d)
+  if (threshold === undefined && daysLeft > 0) return `осталось ${daysLeft} дн.`
+
+  // Не чаще раза в сутки, иначе при пятиминутном cron это 288 сообщений в день.
+  const alertedToday = data.last_alert_at
+    && new Date(data.last_alert_at).toISOString().slice(0, 10) === today.toISOString().slice(0, 10)
+  if (alertedToday) return `осталось ${daysLeft} дн., уже предупредил сегодня`
+
+  const title = daysLeft <= 0
+    ? '🔴 Nur Hayat: сертификат истёк'
+    : `⚠️ Nur Hayat: сертификат истекает через ${daysLeft} дн.`
+  const body = daysLeft <= 0
+    ? `SSL-сертификат nurhayat.ru истёк ${data.expires_on}. Приложение может быть отрезано от сервера — проверьте REG.RU немедленно.`
+    : `SSL-сертификат nurhayat.ru истекает ${data.expires_on}. В панели REG.RU проверьте, что продление прошло И что сайт переключён именно на новый сертификат — в прошлый раз сломалось именно это.`
+
+  await Promise.allSettled([
+    alertPush(supabase, title, body),
+    alertEmail(title, body, `дата истечения ${data.expires_on}, осталось ${daysLeft} дн.`),
+  ])
+  await supabase.from('service_health').upsert(
+    { service: CERT_KEY, is_down: daysLeft <= 0, expires_on: data.expires_on, last_alert_at: new Date().toISOString() },
+    { onConflict: 'service' },
+  )
+  return `предупредил: осталось ${daysLeft} дн.`
+}
 
 // Push только на устройства разработчика — обычные пользователи об авариях
 // не уведомляются.
