@@ -17,7 +17,7 @@ export default function Prophets({ onClose }) {
   }
 
   if (selected) {
-    return <ProphetDetail prophet={selected} onBack={() => setSelected(null)} onClose={onClose} />
+    return <ProphetDetail prophet={selected} onBack={() => setSelected(null)} />
   }
 
   return (
@@ -74,9 +74,13 @@ export default function Prophets({ onClose }) {
   )
 }
 
-function ProphetDetail({ prophet: p, onBack, onClose }) {
+function ProphetDetail({ prophet: p, onBack }) {
   const [openSection, setOpenSection] = useState(0)
-  const swipe = useSwipeDown(onClose)
+  // Свайп вниз возвращает к списку пророков, как кнопка "‹" рядом и как
+  // аппаратная кнопка "назад". Раньше здесь стоял onClose, и жест закрывал
+  // весь раздел целиком — из трёх способов вернуться назад два вели к списку,
+  // а третий выбрасывал на страницу "Знания".
+  const swipe = useSwipeDown(onBack)
 
   return (
     <div style={s.wrap} {...swipe}>

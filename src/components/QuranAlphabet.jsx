@@ -938,9 +938,14 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
         <div style={s.introText}>{intro}</div>
       </div>
       <div style={s.secTitle}>Примеры</div>
+      {/* Пример произносится по нажатию. При редизайне "Знаний" эту строку
+          превратили из кнопки в обычный блок — озвучка примеров в главах
+          Танвин/Шадда/Мадд/Сукун молча перестала работать, хотя проп onSpeak
+          сюда по-прежнему передавался и стиль остался кнопочным. */}
       {items.map((item, i) => (
-        <div key={i}
-          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}>
+        <button key={i}
+          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}
+          onClick={() => onSpeak(item.tts)}>
           <div style={{ ...s.exRowAr, color: item.color || ch.color }} className="arabic">{item.ar}</div>
           <div style={s.exRowBody}>
             <div style={s.exRowRu}>«{item.ru}» — {item.meaning}</div>
@@ -948,7 +953,8 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
             {showNote && item.note && <div style={s.exRowNote}>{item.note}</div>}
             {item.rule && <div style={s.exRowNote}>{item.rule}</div>}
           </div>
-        </div>
+          <span style={{ ...s.exRowPlay, color: item.color || ch.color }}>{ttsActive ? '⏹' : '▶'}</span>
+        </button>
       ))}
     </>
   )

@@ -61,7 +61,11 @@ export default function RegisterStep3Gender({ data, onNext, onBack, loading, sta
       <p style={s.hint}>Можно изменить в профиле позже</p>
 
       <div style={s.btns}>
-        <button className="btn btn-ghost" onClick={onBack} style={{ flex: 1 }}>← Назад</button>
+        {/* Пока идёт создание аккаунта, уходить назад нельзя: запрос
+            продолжался бы в фоне и по завершении дёргал бы навигацию и ошибки
+            уже поверх экрана ввода имени, куда пользователь успел вернуться. */}
+        <button className="btn btn-ghost" onClick={onBack} disabled={loading}
+          style={{ flex: 1, opacity: loading ? 0.4 : 1, cursor: loading ? 'default' : 'pointer' }}>← Назад</button>
         <button
           className="btn btn-primary"
           onClick={() => selected && onNext({ gender: selected })}
