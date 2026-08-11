@@ -3,18 +3,23 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import { EVENTS_BY_YEAR, ISLAMIC_EVENTS } from '../data/islamic-calendar'
 import { getEidToday, shareEidGreeting } from '../utils/eidGreeting'
+import { localDateStr } from '../utils/date'
 
 const EVENT_META = Object.fromEntries(ISLAMIC_EVENTS.map(e => [e.id, e]))
 const EID_IDS = ['fitr', 'adha']
 
+// Дата берётся по МЕСТНОМУ времени. toISOString() возвращает UTC, а в поясах
+// впереди UTC (вся аудитория приложения) местная дата наступает раньше: ночью,
+// с полуночи и до +3/+4 часов, UTC-дата ещё вчерашняя. В эти часы праздник
+// считался ненаступившим, а напоминание «за 3 дня» срабатывало на сутки раньше.
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 function addDays(dateStr, n) {
   const d = new Date(dateStr + 'T00:00:00')
   d.setDate(d.getDate() + n)
-  return d.toISOString().split('T')[0]
+  return localDateStr(d)
 }
 
 // День праздника важнее «за 3 дня» — если оба совпадают (не должно, но на

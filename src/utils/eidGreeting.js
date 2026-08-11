@@ -1,11 +1,15 @@
 import { EVENTS_BY_YEAR, ISLAMIC_EVENTS } from '../data/islamic-calendar'
 import { generateShareCard, shareCardImage } from './shareCard'
+import { localDateStr } from './date'
 
 const EVENT_META = Object.fromEntries(ISLAMIC_EVENTS.map(e => [e.id, e]))
 const EID_IDS = ['fitr', 'adha']
 
+// По местному времени: через toISOString() (UTC) ночью, с полуночи и до +3/+4
+// часов, «сегодня» ещё вчерашнее — и поздравление с Ид не показалось бы тем,
+// кто открыл приложение рано утром в сам праздник.
 function todayStr() {
-  return new Date().toISOString().split('T')[0]
+  return localDateStr()
 }
 
 // Только сам день праздника — Ид аль-Фитр и Ид аль-Адха оба длятся 1 день

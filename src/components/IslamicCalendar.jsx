@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { ISLAMIC_EVENTS, EVENTS_BY_YEAR } from '../data/islamic-calendar'
+import { localDateStr } from '../utils/date'
 
 const MONTHS_RU = ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек']
 const MONTHS_FULL = ['января','февраля','марта','апреля','мая','июня','июля','августа','сентября','октября','ноября','декабря']
@@ -28,7 +29,9 @@ function daysUntil(dateStr) {
 // напоминания), иначе просто первое совпадение по годам.
 function findEventById(id) {
   const years = Object.keys(EVENTS_BY_YEAR).map(Number).sort((a, b) => a - b)
-  const todayStr = new Date().toISOString().split('T')[0]
+  // По местному времени, не по UTC: ночью (с полуночи до +3/+4 часов) UTC-дата
+  // ещё вчерашняя, и календарь открывал не то событие (см. utils/date.js).
+  const todayStr = localDateStr()
   let fallback = null
   for (const y of years) {
     const ye = (EVENTS_BY_YEAR[y] || []).find(e => e.id === id)
@@ -67,7 +70,7 @@ export default function IslamicCalendar({ onClose, initialEventId }) {
     .filter(Boolean)
     .sort((a, b) => new Date(a.date) - new Date(b.date))
 
-  const todayStr = new Date().toISOString().split('T')[0]
+  const todayStr = localDateStr()
 
   function openDetail(ev) {
     setSelected(ev)

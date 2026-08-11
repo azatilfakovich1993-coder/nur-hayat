@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase/client'
 import { useBackHandler } from '../hooks/useBackHandler'
+import { localDateStr } from '../utils/date'
 
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha']
 const PRAYER_RU    = { Fajr:'Фаджр', Dhuhr:'Зухр', Asr:'Аср', Maghrib:'Магриб', Isha:'Иша' }
@@ -56,7 +57,10 @@ export default function PrayerCalendar({ user, onClose }) {
   const pad       = n => String(n).padStart(2, '0')
   const firstDow  = (new Date(year, month, 1).getDay() + 6) % 7
   const daysCount = new Date(year, month + 1, 0).getDate()
-  const todayStr  = now.toISOString().split('T')[0]
+  // Календарь строится по местным датам (ячейки собираются из year/month/day
+  // ниже), поэтому и «сегодня» должно быть местным. Через toISOString() ночью,
+  // до +3/+4 часов, подсветка «сегодня» оставалась на вчерашней клетке.
+  const todayStr  = localDateStr(now)
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth()
 
   const cells = []
