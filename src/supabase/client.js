@@ -10,6 +10,63 @@ function fetchWithTimeout(input, init = {}, ms = 20000) {
 const SUPABASE_URL  = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_ANON
 
+// ── Запасной путь на случай, когда прокси недоступен ──────────────
+// Приложение ходит в Supabase через собственный прокси (nurhayat.ru), потому
+// что прямой адрес в РФ нестабилен. Но когда у прокси слетел SSL-сертификат,
+// приложение оказалось отрезано от сервера ЦЕЛИКОМ: не работали ни вход, ни
+// регистрация, ни сохранение намазов, а внешне оно притворялось рабочим,
+// показывая кэш. Теперь при сетевом отказе прокси тот же самый запрос
+// повторяется на прямой адрес проекта.
+//
+// Адрес не хранится отдельной настройкой, а достаётся из anon-ключа: в нём
+// лежит ref проекта. Так он не может разъехаться с VITE_SUPABASE_ANON.
+function directUrlFromAnonKey(key) {
+  try {
+    const base64 = key.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')
+    const { ref } = JSON.parse(atob(base64))
+    return ref ? `https://${ref}.supabase.co` : null
+  } catch { return null }
+}
+
+const DIRECT_URL = directUrlFromAnonKey(SUPABASE_ANON)
+
+// Прокси уже подводил в этой сессии — не колотимся в него на каждом запросе.
+// Сбрасывается при следующем запуске приложения, так что после починки прокси
+// трафик сам возвращается на него.
+let proxyDown = false
+
+function toDirect(url) {
+  return url.startsWith(SUPABASE_URL) ? DIRECT_URL + url.slice(SUPABASE_URL.length) : url
+}
+
+function supabaseFetch(input, init = {}) {
+  const url = typeof input === 'string' ? input : input?.url
+  const canFallback = DIRECT_URL && DIRECT_URL !== SUPABASE_URL && typeof url === 'string' && url.startsWith(SUPABASE_URL)
+
+  if (!canFallback) return fetchWithTimeout(input, init, 20000)
+  if (proxyDown)    return fetchWithTimeout(toDirect(url), init, 20000)
+
+  // Обычные ответы сервера (401, 500 и т.п.) исключения НЕ бросают — в catch
+  // попадают только настоящие отказы связи: DNS, TLS, обрыв, таймаут.
+  return fetchWithTimeout(input, init, 20000).then(async (res) => {
+    // Отдельный случай — домен или хостинг не оплачен. Тогда вместо отказа
+    // связи приходит бодрая HTML-заглушка ("услуга приостановлена") с кодом
+    // 200, и по одному лишь факту ответа прокси не отличить от рабочего.
+    // Supabase на своих эндпоинтах HTML не отдаёт никогда — только JSON или
+    // содержимое файлов, поэтому HTML тут значит "прокси больше не прокси".
+    if (!(res.headers.get('content-type') || '').includes('text/html')) return res
+    const direct = await fetchWithTimeout(toDirect(url), init, 20000)
+    proxyDown = true
+    console.warn('[supabase] прокси отдаёт HTML вместо данных, перешли на прямой адрес')
+    return direct
+  }).catch(async (err) => {
+    const res = await fetchWithTimeout(toDirect(url), init, 20000)
+    proxyDown = true
+    console.warn('[supabase] прокси недоступен, перешли на прямой адрес:', err?.message)
+    return res
+  })
+}
+
 // navigator.locks в Android WebView часто зависает навсегда — getSession() не возвращается.
 async function inProcessLock(_name, _acquireTimeout, fn) {
   return await fn()
@@ -29,7 +86,7 @@ const storage = {
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   global: {
-    fetch: (input, init) => fetchWithTimeout(input, init, 20000),
+    fetch: supabaseFetch,
   },
   auth: {
     persistSession:     true,
