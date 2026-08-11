@@ -1,9 +1,7 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { DUAS_CATEGORIES } from '../data/duas'
 
 export default function Duas({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
   const [catId,    setCatId]    = useState(DUAS_CATEGORIES[0].id)
   const [expanded, setExpanded] = useState(null)
 
@@ -14,7 +12,7 @@ export default function Duas({ onClose }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
         <div style={s.headRow}>

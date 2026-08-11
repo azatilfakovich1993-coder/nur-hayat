@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useSwipeCards } from '../hooks/useSwipeCards'
 import { useBackHandler } from '../hooks/useBackHandler'
 import DawnLandscape from './DawnLandscape'
@@ -333,7 +332,6 @@ const WUDU_STEPS = [
 
 // ── Основной компонент ─────────────────────────────────────────
 export default function PrayerGuide({ onClose }) {
-  const swipe        = useSwipeDown(onClose)
   const [tab,          setTab]       = useState('intro')   // 'intro' | 'wudu' | 'steps' | 'prayers'
   const [stepIdx,      setStepIdx]   = useStepProgress('namaz-steps', PRAYER_STEPS.length - 1)
   const [wuduIdx,      setWuduIdx]   = useStepProgress('wudu-steps', WUDU_STEPS.length)
@@ -412,7 +410,7 @@ export default function PrayerGuide({ onClose }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
 
       {/* ── Шапка ── */}
       <div style={s.head}>

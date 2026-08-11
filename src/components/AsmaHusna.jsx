@@ -1,10 +1,8 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { ASMA_HUSNA } from '../data/asmaul-husna'
 
 export default function AsmaHusna({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
   const [search,   setSearch]   = useState('')
   const [selected, setSelected] = useState(null)
 
@@ -19,7 +17,7 @@ export default function AsmaHusna({ onClose }) {
     : ASMA_HUSNA
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
         <div style={s.headRow}>

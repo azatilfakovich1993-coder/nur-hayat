@@ -1,7 +1,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Fuse from 'fuse.js'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { SEARCH_INDEX } from '../data/search-index'
 
 const fuse = new Fuse(SEARCH_INDEX, {
@@ -16,7 +15,6 @@ const fuse = new Fuse(SEARCH_INDEX, {
 const SUGGESTIONS = ['Намаз', 'Азкары', 'Настройки', 'Кибла', 'Вопросы и ответы']
 
 export default function AppSearch({ onClose }) {
-  const swipe = useSwipeDown(onClose)
   const navigate = useNavigate()
   const [query, setQuery] = useState('')
   const inputRef = useRef(null)
@@ -42,7 +40,7 @@ export default function AppSearch({ onClose }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       <div style={s.head}>
         <button style={s.backBtn} onClick={onClose}>‹</button>
         <div style={s.searchWrap}>

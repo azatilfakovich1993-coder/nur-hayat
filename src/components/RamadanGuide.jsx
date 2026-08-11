@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { RAMADAN_GUIDE } from '../data/ramadan'
 
 const TABS = [
@@ -392,7 +391,6 @@ function ImportantTab() {
 /* ── Main Component ─────────────────────────────────── */
 
 export default function RamadanGuide({ onClose }) {
-  const swipe      = useSwipeDown(onClose)
   const [activeTab, setActiveTab] = useState('basics')
 
   return (
@@ -404,7 +402,7 @@ export default function RamadanGuide({ onClose }) {
       display: 'flex',
       flexDirection: 'column',
       fontFamily: 'var(--font-ui)',
-    }} {...swipe}>
+    }}>
 
       {/* ── Header ── */}
       <div style={{

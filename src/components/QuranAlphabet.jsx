@@ -814,8 +814,6 @@ export default function QuranAlphabet({ onClose }) {
             ch={chapter}
             intro={`Сукун (ْ) — маленький кружок над буквой. Он говорит: «здесь нет гласной».\n\nЕсли ты уже знаешь как читать «ба», «та», «са» — теперь представь ту же букву, но без гласной на конце: просто «б», «т», «с». Именно это и делает сукун.\n\nКак читать: произноси букву коротко и закрыто, не тяни — сразу переходи к следующей букве.\n\nПример: قُلْ = «кул» + «ь» → «куль». Лям в конце с сукуном закрывает слог.`}
             items={SUKUN_EXAMPLES}
-            onSpeak={handleSpeak}
-            ttsActive={ttsActive}
           />
           <div style={{ height: 24 }} />
         </div>
@@ -831,8 +829,6 @@ export default function QuranAlphabet({ onClose }) {
             ch={{ icon:'ـٌ', color:'#a07de8', border:'rgba(160,125,232,.3)', bg:'rgba(160,125,232,.1)' }}
             intro={`Танвин — это когда в конце слова стоит ДВОЙНОЙ харакат вместо одинарного. Он добавляет к гласной звук «н».\n\nКак выглядит и звучит:\n• ً (две фатхи) → «ан»\n• ٍ (две кясры) → «ин»\n• ٌ (две даммы) → «ун»\n\nЗачем он нужен: танвин ставится вместо артикля اَلـ («аль») и показывает, что слово неопределённое — как в русском «книга» (какая-то) вместо «эта книга».\n\nСравни: أَحَدٌ («ахадун») — «Единственный», без артикля, с танвином (первый аят суры «Аль-Ихляс», 112:1). А со словом с артиклем харакат был бы одинарный, без танвина.`}
             items={TANWIN_EXAMPLES}
-            onSpeak={handleSpeak}
-            ttsActive={ttsActive}
             showType
           />
 
@@ -841,8 +837,6 @@ export default function QuranAlphabet({ onClose }) {
             ch={{ icon:'بّ', color:'#e8c05a', border:'rgba(232,192,90,.3)', bg:'rgba(232,192,90,.1)' }}
             intro={`Шадда (ّ) — значок в форме маленького зубчика над буквой. Он означает: эта буква удваивается — звучит так, будто написана два раза подряд.\n\nКак читать: сначала короткая остановка на согласной (без гласной), затем та же буква ещё раз — уже с харакатом.\n\nПример 1: имя Пророка ﷺ — مُحَمَّد (Мухаммад). Буква م с шаддой в середине звучит удвоенно: «мухам-мад», а не «мухамад».\n\nПример 2: رَبَّنَا («раббана» — «Господь наш», часто встречается в коранических дуа). Буква ب с шаддой: «раб-бана», не «рабана».\n\nГлавное правило: видишь шадду — задержись на согласной чуть дольше, произнеси её как бы дважды.`}
             items={SHADDA_EXAMPLES}
-            onSpeak={handleSpeak}
-            ttsActive={ttsActive}
             showNote
           />
 
@@ -851,8 +845,6 @@ export default function QuranAlphabet({ onClose }) {
             ch={{ icon:'ـا', color:'#e88a5a', border:'rgba(232,138,90,.3)', bg:'rgba(232,138,90,.1)' }}
             intro={`Мадд (مَدّ) — это удлинение гласного звука. Обычная гласная звучит мгновенно, а с маддом она тянется примерно 2 счёта (около 1 секунды).\n\nКак распознать: сразу после харакята стоит одна из трёх «долгих» букв — ا, و или ي. Это и есть сигнал «тяни».\n\nТри вида:\n• Фатха + ا → тяни «а-а», пример: الرَّحْمَٰنِ («ар-рахмааани» — Милостивый, начало почти каждой суры)\n• Дамма + و → тяни «у-у», пример: نُوحٍ («нуухин» — имя пророка Нуха)\n• Кясра + ي → тяни «и-и», пример: الرَّحِيمِ («ар-рахиими» — Милосердный)\n\nГлавное: тянуть ровно 2 счёта — не короче и не дольше.`}
             items={MADD_EXAMPLES}
-            onSpeak={handleSpeak}
-            ttsActive={ttsActive}
             showType
             showNote
           />
@@ -930,7 +922,7 @@ const nurToastStyle = {
 }
 
 // ── Вспомогательный компонент для специальных глав ──────────────────────
-function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNote }) {
+function SpeicalChapter({ ch, intro, items, showType, showNote }) {
   return (
     <>
       <div style={{ ...s.chapIntro, borderColor: ch.border, background: ch.bg }}>
@@ -938,14 +930,13 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
         <div style={s.introText}>{intro}</div>
       </div>
       <div style={s.secTitle}>Примеры</div>
-      {/* Пример произносится по нажатию. При редизайне "Знаний" эту строку
-          превратили из кнопки в обычный блок — озвучка примеров в главах
-          Танвин/Шадда/Мадд/Сукун молча перестала работать, хотя проп onSpeak
-          сюда по-прежнему передавался и стиль остался кнопочным. */}
+      {/* Примеры здесь не озвучиваются сознательно — это справочные слова на
+          правило, а не упражнение на произношение (для него есть отдельная
+          кнопка "Произнести" в разделе харакатов). Поэтому строка не кнопка и
+          значка ▶ у неё нет. */}
       {items.map((item, i) => (
-        <button key={i}
-          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}
-          onClick={() => onSpeak(item.tts)}>
+        <div key={i}
+          style={{ ...s.exampleRow, borderColor: (item.color || ch.color) + '45', background: (item.color || ch.color) + '0a' }}>
           <div style={{ ...s.exRowAr, color: item.color || ch.color }} className="arabic">{item.ar}</div>
           <div style={s.exRowBody}>
             <div style={s.exRowRu}>«{item.ru}» — {item.meaning}</div>
@@ -953,8 +944,7 @@ function SpeicalChapter({ ch, intro, items, onSpeak, ttsActive, showType, showNo
             {showNote && item.note && <div style={s.exRowNote}>{item.note}</div>}
             {item.rule && <div style={s.exRowNote}>{item.rule}</div>}
           </div>
-          <span style={{ ...s.exRowPlay, color: item.color || ch.color }}>{ttsActive ? '⏹' : '▶'}</span>
-        </button>
+        </div>
       ))}
     </>
   )

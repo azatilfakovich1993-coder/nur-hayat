@@ -1,10 +1,8 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { QA_CATEGORIES, QA_DATA } from '../data/qa-data'
 import DawnLandscape from './DawnLandscape'
 
 export default function QandA({ onClose, initialOpenId }) {
-  const swipe    = useSwipeDown(onClose)
   const [search,   setSearch]   = useState('')
   const [category, setCategory] = useState('basics')
   const [openId,   setOpenId]   = useState(null)
@@ -34,7 +32,7 @@ export default function QandA({ onClose, initialOpenId }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
         <DawnLandscape />

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { ADHKAR, DAILY_DHIKR } from '../data/adhkar'
 
@@ -7,7 +6,6 @@ import { ADHKAR, DAILY_DHIKR } from '../data/adhkar'
 const todayDhikr = DAILY_DHIKR[new Date().getDate() % DAILY_DHIKR.length]
 
 export default function Adhkar({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
   const now = new Date().getHours()
   const defaultTab = (now >= 4 && now < 15) ? 'morning' : 'evening'
 
@@ -56,7 +54,7 @@ export default function Adhkar({ onClose }) {
   const progress  = dhikr ? pressed / dhikr.count : 0
 
   if (done) return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       <div style={s.head}>
         <button style={s.closeBtn} onClick={onClose}>✕</button>
       </div>
@@ -87,7 +85,7 @@ export default function Adhkar({ onClose }) {
   )
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
         <div style={s.headTop}>

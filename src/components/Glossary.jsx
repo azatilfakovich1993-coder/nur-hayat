@@ -1,5 +1,4 @@
 import { useState, useMemo, useRef } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { GLOSSARY, GLOSSARY_CATEGORIES } from '../data/glossary'
 import { useAuth } from '../hooks/useAuth'
 import { addNurIfLevel } from '../utils/nur'
@@ -28,7 +27,6 @@ const t = {
 }
 
 export default function Glossary({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
   const { user, profile, setProfile } = useAuth()
   const [search,   setSearch]   = useState('')
   const [category, setCategory] = useState('Все')
@@ -75,7 +73,7 @@ export default function Glossary({ onClose }) {
   }, [search, category])
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {toast && <NurToast />}
       <style>{`@keyframes toastIn { from{opacity:0;transform:translateX(-50%) translateY(10px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }`}</style>
 

@@ -13,7 +13,6 @@ import Shahada        from './Shahada'
 import PillarsOfIslam from './PillarsOfIslam'
 import QandAQuiz      from './QandAQuiz'
 import { SURAHS }     from '../data/surahs-learn'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 
 // ── Определение шагов ────────────────────────────────────────────────────────
@@ -275,7 +274,6 @@ function saveProgress(p) {
 
 // ── Главный компонент ─────────────────────────────────────────────────────────
 export default function BeginnerPath({ onClose }) {
-  const swipe        = useSwipeDown(onClose)
   const navigate = useNavigate()
   const { user, profile, setProfile } = useAuth()
   const [openSection,     setOpenSection]     = useState(null)
@@ -380,7 +378,7 @@ function handleMarkDoneRequest(step) {
   )
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* ── Шапка ── */}
       <div style={s.head}>
         <button style={s.backBtn} onClick={onClose}>‹</button>

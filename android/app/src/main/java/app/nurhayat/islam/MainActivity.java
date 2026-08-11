@@ -4,19 +4,27 @@ import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
 import android.webkit.WebSettings;
 import androidx.core.view.WindowCompat;
-import androidx.core.view.WindowInsetsCompat;
-import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        // Edge-to-edge: даём системе не "поджимать" контент под жестовую навигацию,
-        // а рисовать под системными барами самим — WebView уже отдаёт настоящие
-        // отступы через env(safe-area-inset-*), которые CSS приложения использует
-        // повсеместно (--safe-top/--safe-bottom в styles/index.css).
+        // Edge-to-edge: даём системе не "поджимать" контент под системные бары,
+        // а рисовать под ними самим — WebView отдаёт настоящие отступы через
+        // env(safe-area-inset-*), которые CSS приложения использует повсеместно
+        // (--safe-top/--safe-bottom в styles/index.css). Нижняя панель вкладок
+        // за счёт этого сама встаёт над кнопками навигации.
+        //
+        // Навигационную панель Android СПЕЦИАЛЬНО не прячем. Раньше здесь стоял
+        // иммерсивный режим: панель скрывалась, safe-area-inset-bottom
+        // становился нулевым, вкладки уезжали к самому низу экрана. А когда
+        // пользователь вызывал системные кнопки свайпом, они рисовались ПОВЕРХ
+        // содержимого (так работают "временные" панели) и закрывали собой
+        // вкладки "Главная / Коран / Намаз / Чат / Профиль". На устройстве с
+        // тремя кнопками навигации это особенно мешало.
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         super.onCreate(savedInstanceState);
+
         // Приложение грузится по виртуальному https://localhost (Capacitor), а
         // тестовое видео при отладке идёт с http-сервера на компьютере — без
         // этого WebView молча блокирует его как "смешанный контент".
@@ -24,13 +32,10 @@ public class MainActivity extends BridgeActivity {
         // ТОЛЬКО для отладки. Раньше это стояло без условия и попадало в релиз:
         // WebView у всех пользователей соглашался подгружать содержимое по
         // незашифрованному http, то есть в чужой сети его можно было подменить.
-        // В релизе остаётся поведение по умолчанию — смешанный контент
-        // запрещён.
+        // В релизе остаётся поведение по умолчанию — смешанный контент запрещён.
         if (isDebugBuild()) {
             this.bridge.getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
-
-        hideNavigationBar();
     }
 
     // Отладочная сборка определяется по флагу самого приложения, а не по
@@ -39,24 +44,5 @@ public class MainActivity extends BridgeActivity {
     // просто не компилируется.
     private boolean isDebugBuild() {
         return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-    }
-
-    // Immersive sticky: прячем кнопочную навигационную панель, свайп снизу
-    // временно её показывает (сама исчезает через пару секунд) — статус-бар
-    // сверху не трогаем, он должен быть виден всегда.
-    // Вызываем не только из onCreate: система сбрасывает флаги скрытия при
-    // каждом получении окном фокуса (возврат из фона, закрытие диалога и
-    // т.п.), поэтому без onWindowFocusChanged панель вернётся сама.
-    private void hideNavigationBar() {
-        WindowInsetsControllerCompat controller =
-            WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
-        controller.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
-        controller.hide(WindowInsetsCompat.Type.navigationBars());
-    }
-
-    @Override
-    public void onWindowFocusChanged(boolean hasFocus) {
-        super.onWindowFocusChanged(hasFocus);
-        if (hasFocus) hideNavigationBar();
     }
 }

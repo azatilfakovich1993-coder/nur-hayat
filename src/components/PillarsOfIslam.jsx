@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import DawnLandscape from './DawnLandscape'
 
@@ -65,7 +64,6 @@ const PILLARS = [
 
 export default function PillarsOfIslam({ onClose }) {
   const [selected, setSelected] = useState(null)
-  const swipe = useSwipeDown(selected ? () => setSelected(null) : onClose)
 
   useBackHandler(!!selected, () => setSelected(null))
 
@@ -74,7 +72,7 @@ export default function PillarsOfIslam({ onClose }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={s.head}>
         <DawnLandscape />
@@ -127,7 +125,7 @@ export default function PillarsOfIslam({ onClose }) {
 // ── Детальный экран одного столпа ───────────────────────────────────────────
 function PillarDetail({ pillar: p, onBack, swipe }) {
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       <div style={s.head}>
         <button style={{ ...s.backBtn, position: 'relative', zIndex: 1 }} onClick={onBack}>‹</button>
         <div style={{ ...s.headMid, position: 'relative', zIndex: 1 }}>

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { ISLAMIC_EVENTS, EVENTS_BY_YEAR } from '../data/islamic-calendar'
 import { localDateStr } from '../utils/date'
@@ -46,7 +45,6 @@ function findEventById(id) {
 }
 
 export default function IslamicCalendar({ onClose, initialEventId }) {
-  const swipe = useSwipeDown(onClose)
   const currentYear = new Date().getFullYear()
   const minYear = Math.min(...Object.keys(EVENTS_BY_YEAR).map(Number))
   const maxYear = Math.max(...Object.keys(EVENTS_BY_YEAR).map(Number))
@@ -78,7 +76,7 @@ export default function IslamicCalendar({ onClose, initialEventId }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
 
       {/* ── Шапка ── */}
       <div style={s.head}>

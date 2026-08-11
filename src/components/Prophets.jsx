@@ -1,11 +1,15 @@
 import { useState } from 'react'
-import { useSwipeDown } from '../hooks/useSwipeDown'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { PROPHETS } from '../data/prophets'
 import QandAQuiz from './QandAQuiz'
 
+// Свайпов для закрытия здесь сознательно нет. Хук useSwipeDown закрывал раздел
+// не только движением вниз, но и любым свайпом вправо ("как в Telegram") — при
+// чтении длинной истории это срабатывало случайно и выбрасывало из раздела.
+// Остаются два понятных способа уйти: кнопка "‹" на экране и аппаратная
+// "назад", причём оба ведут по одному шагу — из истории к списку пророков, и
+// только следующим нажатием из раздела.
 export default function Prophets({ onClose }) {
-  const swipe    = useSwipeDown(onClose)
   const [selected, setSelected] = useState(null)
   const [showQuiz, setShowQuiz] = useState(false)
 
@@ -21,7 +25,7 @@ export default function Prophets({ onClose }) {
   }
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       <div style={s.head}>
         <button style={s.backBtn} onClick={onClose}>‹</button>
         <div style={s.headInfo}>
@@ -76,14 +80,9 @@ export default function Prophets({ onClose }) {
 
 function ProphetDetail({ prophet: p, onBack }) {
   const [openSection, setOpenSection] = useState(0)
-  // Свайп вниз возвращает к списку пророков, как кнопка "‹" рядом и как
-  // аппаратная кнопка "назад". Раньше здесь стоял onClose, и жест закрывал
-  // весь раздел целиком — из трёх способов вернуться назад два вели к списку,
-  // а третий выбрасывал на страницу "Знания".
-  const swipe = useSwipeDown(onBack)
 
   return (
-    <div style={s.wrap} {...swipe}>
+    <div style={s.wrap}>
       {/* Шапка */}
       <div style={{ ...s.head, borderColor: p.border }}>
         <button style={s.backBtn} onClick={onBack}>‹</button>
