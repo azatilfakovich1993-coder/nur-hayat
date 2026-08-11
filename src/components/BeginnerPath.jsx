@@ -480,7 +480,13 @@ function handleMarkDoneRequest(step) {
                   >
                     {step.action} →
                   </button>
-                  {isCurr && step.manual && (
+                  {/* Кнопка показывается у ЛЮБОГО непройденного шага, а не только
+                      у текущего по порядку. Раньше человек мог открыть шаг,
+                      пройти его целиком вместе с тестом — и не найти способа
+                      отметить, потому что путь считал текущим другой шаг.
+                      Порядок остаётся рекомендацией (подсказка выше), а не
+                      запретом. */}
+                  {step.manual && (
                     <button style={{ ...s.doneBtn, borderColor: color + '45', color }} onClick={() => handleMarkDoneRequest(step)}>
                       ✓ Выполнено
                     </button>

@@ -14,6 +14,9 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         // Мост для согласования системных баров с темой приложения (см. SystemBarsPlugin).
         registerPlugin(SystemBarsPlugin.class);
+        // Открытие системных настроек приложения — нужно, когда отказано в
+        // доступе к местоположению и запросить его заново нечем.
+        registerPlugin(DeviceSettingsPlugin.class);
         // Edge-to-edge: даём системе не "поджимать" контент под системные бары,
         // а рисовать под ними самим — WebView отдаёт настоящие отступы через
         // env(safe-area-inset-*), которые CSS приложения использует повсеместно

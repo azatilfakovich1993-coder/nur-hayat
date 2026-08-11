@@ -68,7 +68,7 @@ export default function PillarsOfIslam({ onClose }) {
   useBackHandler(!!selected, () => setSelected(null))
 
   if (selected) {
-    return <PillarDetail pillar={selected} onBack={() => setSelected(null)} swipe={swipe} />
+    return <PillarDetail pillar={selected} onBack={() => setSelected(null)} />
   }
 
   return (
@@ -123,7 +123,7 @@ export default function PillarsOfIslam({ onClose }) {
 }
 
 // ── Детальный экран одного столпа ───────────────────────────────────────────
-function PillarDetail({ pillar: p, onBack, swipe }) {
+function PillarDetail({ pillar: p, onBack }) {
   return (
     <div style={s.wrap}>
       <div style={s.head}>

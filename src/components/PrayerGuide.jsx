@@ -1006,7 +1006,12 @@ export default function PrayerGuide({ onClose }) {
               <div style={s.navCenter}>
                 {guslIdx < GUSL_STEPS.length - 1
                   ? <button style={{ ...s.navNextBtn, background: '#2C7A6E' }} onClick={() => setGuslIdx(guslIdx + 1)}>Далее →</button>
-                  : <button style={{ ...s.navNextBtn, background: '#52b788' }} disabled>✓ Гусль изучен</button>
+                  /* Кнопка была disabled — то есть надписью, а не кнопкой: дойдя
+                     до последнего шага, человек упирался в тупик и не понимал,
+                     как выйти. Отдельного теста по гуслю нет (он часть раздела
+                     «Вуду»), поэтому завершение возвращает в меню раздела. */
+                  : <button style={{ ...s.navNextBtn, background: '#52b788' }}
+                      onClick={() => { setGuslIdx(0); setWuduSection(null) }}>✓ Гусль изучен →</button>
                 }
               </div>
             </div>

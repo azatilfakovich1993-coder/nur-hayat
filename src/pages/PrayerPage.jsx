@@ -10,7 +10,11 @@ import { clearAllTimers, pushTimer, cancelPrayerNotifs } from '../utils/prayerNo
 import { supabase } from '../supabase/client'
 import PrayerCalendar from '../components/PrayerCalendar'
 import { LocalNotifications } from '@capacitor/local-notifications'
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+// Открывает системные настройки приложения — единственный способ вернуть
+// доступ к местоположению, если пользователь его отклонил (см. DeviceSettingsPlugin.java).
+const DeviceSettings = registerPlugin('DeviceSettings')
 
 // Идём через nurhayat.ru — сам nominatim.openstreetmap.org тоже блокируется
 // провайдерами (та же причина, что и для Supabase/аудио намазов)
@@ -1741,12 +1745,24 @@ export default function PrayerPage() {
                 : 'Не удалось загрузить времена намаза'}
             </div>
             <div style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', lineHeight:1.6 }}>
-              {error === 'geo_timeout'
-                ? 'GPS не успел поймать сигнал — попробуйте на открытом месте, или выберите город вручную.'
-                : 'Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.'}
+              {error === 'geo_denied'
+                ? 'Доступ к местоположению отклонён. Разрешите его в настройках приложения — или просто выберите город вручную, это работает так же точно.'
+                : error === 'geo_timeout'
+                  ? 'GPS не успел поймать сигнал — попробуйте на открытом месте, или выберите город вручную.'
+                  : 'Проверьте интернет-соединение и попробуйте снова, или выберите город вручную.'}
             </div>
             {mode !== 'manual' && (
               <button style={s.enableBtn} onClick={() => switchMode('manual')}>🏙 Выбрать город вручную</button>
+            )}
+            {/* Отказ в геолокации приложение само отменить не может: плагина
+                геолокации нет, а если Android запомнил отказ — системное окно
+                больше не покажется, и "попробовать снова" будет молча упираться
+                в тот же отказ. Поэтому ведём прямо в настройки. */}
+            {error === 'geo_denied' && Capacitor.isNativePlatform() && (
+              <button style={{ ...s.enableBtn, background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', marginTop:0 }}
+                onClick={() => DeviceSettings.openAppSettings().catch(() => {})}>
+                ⚙️ Открыть настройки приложения
+              </button>
             )}
             <button style={{ ...s.enableBtn, background:'none', border:'1px solid var(--border)', color:'var(--text-muted)', marginTop:0 }}
               onClick={() => mode === 'auto' ? loadByGeo() : loadManual()}>
