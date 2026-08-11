@@ -66,6 +66,11 @@ function setCachedProfile(userId, profile) {
   try { localStorage.setItem('nur-hayat-profile-' + userId, JSON.stringify(profile)) } catch {}
 }
 
+// Заглушка на время, пока настоящий профиль едет с сервера. Здесь СОЗНАТЕЛЬНО
+// нет gender: пол ничем не заменить, а угаданное значение открыло бы доступ не
+// в тот раздел чата. Флаг _partial говорит остальному приложению "это ещё не
+// настоящие данные" — по нему заглушка не попадает в кэш (иначе она оставалась
+// бы там навсегда и подменяла собой профиль с реально заполненным полом).
 function minimalProfile(user) {
   return {
     id:             user.id,
@@ -77,6 +82,7 @@ function minimalProfile(user) {
     nur:            10,
     streak:         0,
     onboarded:      true,
+    _partial:       true,
   }
 }
 
@@ -93,7 +99,11 @@ export function AuthProvider({ children }) {
   const setProfile = (updaterOrValue) => {
     setProfileRaw(prev => {
       const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue
-      if (next && userRef.current) setCachedProfile(userRef.current.id, next)
+      // Заглушку (_partial) в кэш не пишем. Раньше писали — и если профиль не
+      // успел загрузиться (медленная сеть, обрыв), в localStorage оседал профиль
+      // без gender и подставлялся при каждом следующем запуске уже как готовый.
+      // Пользователь с указанным на сервере полом получал в чате "укажи пол".
+      if (next && !next._partial && userRef.current) setCachedProfile(userRef.current.id, next)
       return next
     })
   }

@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth'
 import { useTheme } from '../App'
 import { supabase } from '../supabase/client'
 import { scheduleDailyVerseNotifs, cancelDailyVerseNotifs } from '../hooks/useDailyVerseNotif'
+import { scheduleAzkarNotifs, cancelAzkarNotifs, azkarDefaults } from '../hooks/useAzkarNotif'
 import { scheduleIslamicHolidayNotifs, cancelIslamicHolidayNotifs } from '../hooks/useIslamicHolidayNotif'
 import { cancelPrayerNotifs } from '../utils/prayerNotifs'
 import { SURAS } from '../data/suras'
@@ -124,13 +125,17 @@ export default function ProfilePage() {
     localStorage.setItem(BEGINNER_HINT_KEY, String(next))
   }
   const [notifEvening, setNotifEvening] = useState(() => localStorage.getItem('notif_evening') || '')
+  // Времена намаза пользователя — из них считается время азкаров по умолчанию.
+  const [prayerTimings, setPrayerTimings] = useState(null)
+  // Сообщение о неудавшейся записи настроек уведомлений в БД.
+  const [notifError, setNotifError] = useState('')
 
   // localStorage — только оптимистичное значение для первого рендера;
   // реальный источник правды — БД (могло меняться с другого устройства).
   useEffect(() => {
     if (!user) return
     supabase.from('prayer_schedules')
-      .select('prayer_notif_enabled, azkar_notif_enabled, daily_verse_enabled')
+      .select('prayer_notif_enabled, azkar_notif_enabled, daily_verse_enabled, morning_adhkar_time, evening_adhkar_time, timings')
       .eq('user_id', user.id)
       .maybeSingle()
       .then(({ data }) => {
@@ -147,6 +152,18 @@ export default function ProfilePage() {
           setNotifDailyVerse(data.daily_verse_enabled)
           localStorage.setItem('daily_verse_enabled', String(data.daily_verse_enabled))
         }
+        // Время азкаров раньше не подтягивалось из БД вообще: на новом телефоне
+        // (или после переустановки) поля показывались пустыми с предупреждением
+        // "заполните оба времени", хотя на сервере они давно сохранены.
+        if (data.morning_adhkar_time) {
+          setNotifMorning(data.morning_adhkar_time.slice(0, 5))
+          localStorage.setItem('notif_morning', data.morning_adhkar_time.slice(0, 5))
+        }
+        if (data.evening_adhkar_time) {
+          setNotifEvening(data.evening_adhkar_time.slice(0, 5))
+          localStorage.setItem('notif_evening', data.evening_adhkar_time.slice(0, 5))
+        }
+        setPrayerTimings(data.timings || null)
       })
   }, [user?.id])
 
@@ -164,12 +181,17 @@ export default function ProfilePage() {
     return res === 'granted'
   }
 
+  // Возвращает ошибку записи (или null) — вызывающий обязан её проверить:
+  // рассылку ведёт сервер, поэтому реальное состояние определяет именно БД,
+  // а не то, что нарисовано в интерфейсе.
   async function saveNotifSettings(patch) {
-    if (!user) return
-    await supabase.from('prayer_schedules').upsert(
+    if (!user) return null
+    const { error } = await supabase.from('prayer_schedules').upsert(
       { user_id: user.id, ...patch },
       { onConflict: 'user_id' }
     )
+    if (error) console.warn('[Profile] notif settings save failed:', error.message)
+    return error
   }
 
   const [testPushStatus, setTestPushStatus] = useState('')
@@ -199,73 +221,99 @@ export default function ProfilePage() {
     setTimeout(() => setTestPushStatus(''), 5000)
   }
 
-  // Выключать можно всегда безусловно — разрешение на уведомления нужно
-  // только когда включаем (раньше ранний return на !ok блокировал и выключение).
-  async function togglePrayerNotif() {
-    const next = !notifPrayer
+  // Общий сценарий для всех четырёх тумблеров: разрешение спрашиваем только при
+  // включении (выключить можно всегда, раньше ранний return на !ok блокировал и
+  // выключение), переключаем оптимистично, пишем в БД и ОТКАТЫВАЕМСЯ, если
+  // запись не прошла. Раньше результат записи нигде не проверялся: при обрыве
+  // связи тумблер оставался в новом положении, а сервер продолжал слать по
+  // старому — это и выглядело как "выключил, а уведомления всё равно идут".
+  async function applyNotifToggle({ current, setter, storageKey, dbField, onApplied }) {
+    const next = !current
     if (next) {
       const ok = await requestNotifPermission()
       if (!ok) return
     }
-    setNotifPrayer(next)
-    localStorage.setItem('notif_prayer', String(next))
-    saveNotifSettings({ prayer_notif_enabled: next })
-    if (!next) cancelPrayerNotifs()
+    setter(next)
+    localStorage.setItem(storageKey, String(next))
+
+    if (dbField) {
+      const error = await saveNotifSettings({ [dbField]: next })
+      if (error) {
+        setter(current)
+        localStorage.setItem(storageKey, String(current))
+        setNotifError('Не удалось сохранить — проверьте интернет и попробуйте снова')
+        setTimeout(() => setNotifError(''), 5000)
+        return
+      }
+    }
+    await onApplied?.(next)
   }
 
-  async function toggleAzkarNotif() {
-    const next = !notifAzkar
-    if (next) {
-      const ok = await requestNotifPermission()
-      if (!ok) return
-    }
-    setNotifAzkar(next)
-    localStorage.setItem('notif_azkar', String(next))
-    saveNotifSettings({ azkar_notif_enabled: next })
-    // Тумблер сам по себе ничего не шлёт — сервер требует ещё и заполненное
-    // время утреннего/вечернего азкара ниже. Раньше можно было включить
-    // тумблер, оставить оба времени пустыми и не получить ни одного
-    // уведомления без единого намёка, почему. Подставляем разумные значения
-    // по умолчанию, если поля ещё не заполнены — пользователь может поправить.
-    if (next) {
-      if (!notifMorning) saveTime('notif_morning', '06:00', setNotifMorning, 'morning_adhkar_time')
-      if (!notifEvening) saveTime('notif_evening', '17:00', setNotifEvening, 'evening_adhkar_time')
-    }
+  function togglePrayerNotif() {
+    return applyNotifToggle({
+      current: notifPrayer, setter: setNotifPrayer,
+      storageKey: 'notif_prayer', dbField: 'prayer_notif_enabled',
+      onApplied: next => { if (!next) cancelPrayerNotifs() },
+    })
   }
 
-  async function toggleDailyVerseNotif() {
-    const next = !notifDailyVerse
-    if (next) {
-      const ok = await requestNotifPermission()
-      if (!ok) return
-    }
-    setNotifDailyVerse(next)
-    localStorage.setItem('daily_verse_enabled', String(next))
-    saveNotifSettings({ daily_verse_enabled: next })
-    if (Capacitor.isNativePlatform()) {
-      if (next) scheduleDailyVerseNotifs()
-      else cancelDailyVerseNotifs()
-    }
+  function toggleAzkarNotif() {
+    return applyNotifToggle({
+      current: notifAzkar, setter: setNotifAzkar,
+      storageKey: 'notif_azkar', dbField: 'azkar_notif_enabled',
+      onApplied: next => {
+        if (!Capacitor.isNativePlatform()) return
+        if (!next) return cancelAzkarNotifs(user?.id)
+        // Тумблер сам по себе ничего не шлёт — нужно ещё заполненное время.
+        // Раньше можно было включить его, оставить оба поля пустыми и не
+        // получить ни одного уведомления без единого намёка, почему.
+        // Подставляем время от намаза пользователя (Фаджр/Аср +30 мин) — его
+        // видно в полях ниже и можно поправить.
+        const defaults = azkarDefaults(prayerTimings)
+        const morning = notifMorning || defaults.morning
+        const evening = notifEvening || defaults.evening
+        if (!notifMorning) saveTime('notif_morning', morning, setNotifMorning, 'morning_adhkar_time')
+        if (!notifEvening) saveTime('notif_evening', evening, setNotifEvening, 'evening_adhkar_time')
+        return scheduleAzkarNotifs(user?.id, { morning, evening })
+      },
+    })
   }
 
-  async function toggleHolidaysNotif() {
-    const next = !notifHolidays
-    if (next) {
-      const ok = await requestNotifPermission()
-      if (!ok) return
-    }
-    setNotifHolidays(next)
-    localStorage.setItem('islamic_holidays_enabled', String(next))
-    if (Capacitor.isNativePlatform()) {
-      if (next) scheduleIslamicHolidayNotifs()
-      else cancelIslamicHolidayNotifs()
-    }
+  function toggleDailyVerseNotif() {
+    return applyNotifToggle({
+      current: notifDailyVerse, setter: setNotifDailyVerse,
+      storageKey: 'daily_verse_enabled', dbField: 'daily_verse_enabled',
+      onApplied: next => {
+        if (!Capacitor.isNativePlatform()) return
+        return next ? scheduleDailyVerseNotifs(user?.id) : cancelDailyVerseNotifs(user?.id)
+      },
+    })
+  }
+
+  // Праздники живут только на телефоне (сервер их не рассылает), поэтому здесь
+  // нет поля в БД — dbField не передаём, откатывать нечего.
+  function toggleHolidaysNotif() {
+    return applyNotifToggle({
+      current: notifHolidays, setter: setNotifHolidays,
+      storageKey: 'islamic_holidays_enabled',
+      onApplied: next => {
+        if (!Capacitor.isNativePlatform()) return
+        return next ? scheduleIslamicHolidayNotifs() : cancelIslamicHolidayNotifs()
+      },
+    })
   }
 
   function saveTime(key, val, setter, dbField) {
     setter(val)
     localStorage.setItem(key, val)
-    if (val) saveNotifSettings({ [dbField]: val, utc_offset: -new Date().getTimezoneOffset() })
+    if (!val) return
+    saveNotifSettings({ [dbField]: val, utc_offset: -new Date().getTimezoneOffset() })
+    // Перепланируем будильники на телефоне под новое время — иначе старое
+    // напоминание продолжало приходить до конца уже расставленных 30 дней.
+    if (!Capacitor.isNativePlatform() || !notifAzkar) return
+    const morning = dbField === 'morning_adhkar_time' ? val : notifMorning
+    const evening = dbField === 'evening_adhkar_time' ? val : notifEvening
+    if (morning && evening) scheduleAzkarNotifs(user?.id, { morning, evening })
   }
 
   // ── Фото профиля ──
@@ -343,11 +391,14 @@ export default function ProfilePage() {
     // Проверяем конкретные ключи, а не сам объект — после чистки state
     // ниже location.state становится {} (истинно!), и проверка "if (!location.state)"
     // пропускала бы её снова и снова, зацикливая navigate() до бесконечности.
-    if (!st || !(st.activeTab || st.openFavorites || st.openNotes || st.openBadges)) return
+    if (!st || !(st.activeTab || st.openFavorites || st.openNotes || st.openBadges || st.openGender)) return
     if (st.activeTab)    setActiveTab(st.activeTab)
     if (st.openFavorites) setShowFavorites(true)
     if (st.openNotes)     setShowNotes(true)
     if (st.openBadges)    setShowBadges(true)
+    // Пришли из чата по кнопке "Указать пол" — сразу раскрываем нужный выбор,
+    // чтобы человек не искал его среди настроек аккаунта.
+    if (st.openGender) { setActiveTab('profile'); setShowGender(true) }
     // Чистим state чтобы повторный рендер не открывал снова
     navigate(location.pathname, { replace: true, state: {} })
   }, [location.state])
@@ -489,6 +540,7 @@ export default function ProfilePage() {
 
           {/* Уведомления */}
           <SectionLabel>Уведомления</SectionLabel>
+          {notifError && <div style={s.notifErrorBanner}>⚠️ {notifError}</div>}
           <div style={s.notifRow}>
             <div style={s.notifLeft}>
               <span style={s.notifIcon}>🕌</span>
@@ -1451,6 +1503,10 @@ const s = {
   notifName:  { fontSize:15, fontWeight:600, color:'var(--text)' },
   notifSub:   { fontSize:12, color:'var(--text-muted)', marginTop:2 },
   azkarTimeWarn: { fontSize:11, color:'#e8a040', padding:'0 0 8px', lineHeight:1.4 },
+  notifErrorBanner: {
+    fontSize:12, color:'#ff6b6b', lineHeight:1.4, padding:'8px 10px', marginBottom:8,
+    background:'rgba(255,107,107,.1)', border:'1px solid rgba(255,107,107,.3)', borderRadius:10,
+  },
   toggle: {
     width:48, height:26, borderRadius:13, border:'none',
     cursor:'pointer', position:'relative', transition:'background .25s', flexShrink:0,

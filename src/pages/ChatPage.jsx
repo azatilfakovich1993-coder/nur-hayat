@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useAuth } from '../hooks/useAuth'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../supabase/client'
 import { addNur } from '../utils/nur'
 import { tapFeedback, incomingMessageFeedback } from '../utils/feedback'
@@ -282,6 +282,7 @@ function setCachedMessages(room, msgs) {
 export default function ChatPage() {
   const { user, profile, setProfile } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
   const [room,       setRoom]       = useState('general')
   const [messages,   setMessages]   = useState([])
   const [text,       setText]       = useState('')
@@ -947,19 +948,32 @@ export default function ChatPage() {
           </div>
         ) : genderBlocked ? (
           <div style={s.empty}>
-            <div style={s.emptyIcon}>{currentRoom.icon}</div>
+            <div style={s.emptyIcon}>{profile?._partial ? '⏳' : currentRoom.icon}</div>
             <div style={s.emptyTitle}>
-              {currentRoom.genderOnly === 'male'
-                ? 'Здесь задают вопросы мужчинам'
-                : 'Здесь задают вопросы женщинам'}
+              {/* Профиль ещё не догрузился — пол на сервере может быть указан,
+                  просто мы его пока не знаем. Раньше в этот момент говорили
+                  "укажи пол", хотя он давно указан, и человек шёл его искать. */}
+              {profile?._partial
+                ? 'Загружаем профиль…'
+                : currentRoom.genderOnly === 'male'
+                  ? 'Здесь задают вопросы мужчинам'
+                  : 'Здесь задают вопросы женщинам'}
             </div>
             <div style={s.emptySub}>
-              {!profile?.gender
-                ? 'Укажи свой пол в профиле, чтобы получить доступ'
-                : currentRoom.genderOnly === 'male'
-                  ? 'Этот раздел только для мужчин'
-                  : 'Этот раздел только для женщин'}
+              {profile?._partial
+                ? 'Проверяем твой профиль — секунду'
+                : !profile?.gender
+                  ? 'Чтобы открыть этот раздел, укажи свой пол'
+                  : currentRoom.genderOnly === 'male'
+                    ? 'Этот раздел только для мужчин'
+                    : 'Этот раздел только для женщин'}
             </div>
+            {!profile?._partial && !profile?.gender && (
+              <button className="btn btn-primary" style={{ marginTop: 14 }}
+                onClick={() => navigate('/profile', { state: { openGender: true } })}>
+                Указать пол
+              </button>
+            )}
           </div>
         ) : loading ? (
           <div style={s.loadWrap}>
@@ -1063,7 +1077,9 @@ export default function ChatPage() {
         <div style={s.inputArea}>
           {genderBlocked ? (
             <div style={s.loginHint}>
-              {!profile?.gender ? 'Укажи пол в профиле → Настройки' : 'Доступ закрыт'}
+              {profile?._partial
+                ? 'Загружаем профиль…'
+                : !profile?.gender ? 'Укажи пол в профиле → Настройки' : 'Доступ закрыт'}
             </div>
           ) : !user ? (
             <div style={s.loginHint}>Войди в аккаунт чтобы писать</div>

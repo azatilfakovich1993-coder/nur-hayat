@@ -18,7 +18,10 @@ const GENDERS = [
 ]
 
 export default function RegisterStep3Gender({ data, onNext, onBack, loading, status }) {
-  const [selected, setSelected] = useState(data.gender || 'male') // выбрано по умолчанию
+  // Ничего не выбираем заранее. Раньше подставлялся 'male', и экран открывался
+  // с готовым ответом — его пролистывали не читая, а женщины молча получали
+  // мужской пол и не тот раздел чата. Кнопка ниже неактивна, пока выбор не сделан.
+  const [selected, setSelected] = useState(data.gender || null)
 
   return (
     <div style={s.wrap}>
