@@ -1,9 +1,12 @@
 package app.nurhayat.islam;
 
 import android.content.pm.ApplicationInfo;
+import android.graphics.Color;
+import android.os.Build;
 import android.os.Bundle;
 import android.webkit.WebSettings;
 import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
 import com.getcapacitor.BridgeActivity;
 
 public class MainActivity extends BridgeActivity {
@@ -35,6 +38,33 @@ public class MainActivity extends BridgeActivity {
         // В релизе остаётся поведение по умолчанию — смешанный контент запрещён.
         if (isDebugBuild()) {
             this.bridge.getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
+
+        applyDarkSystemBars();
+    }
+
+    // Приложение всегда тёмное, а системные бары по умолчанию берут вид из
+    // системной темы телефона: при светлой теме внизу появлялась светло-серая
+    // полоса с тёмными значками, резко выбивавшаяся из оформления.
+    //
+    // Начиная с Android 15 заданный цвет панели система игнорирует — вместо
+    // этого она сама подкладывает под прозрачную панель полупрозрачную
+    // подложку ("contrast"), подбирая её под свою тему. Поэтому подложку
+    // выключаем: под кнопками остаётся фон самого приложения. Значки при этом
+    // должны быть светлыми, иначе они сольются с тёмным фоном.
+    private void applyDarkSystemBars() {
+        WindowInsetsControllerCompat controller =
+            WindowCompat.getInsetsController(getWindow(), getWindow().getDecorView());
+        // false = светлые (белые) значки, рассчитанные на тёмный фон.
+        controller.setAppearanceLightNavigationBars(false);
+        controller.setAppearanceLightStatusBars(false);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            getWindow().setNavigationBarContrastEnforced(false);
+        }
+        // Для Android 14 и старее цвет панели ещё учитывается — задаём его явно.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.VANILLA_ICE_CREAM) {
+            getWindow().setNavigationBarColor(Color.parseColor("#070710"));
         }
     }
 
