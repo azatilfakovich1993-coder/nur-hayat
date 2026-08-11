@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '../supabase/client'
-import { fetchTimings } from '../utils/prayerTimes'
+import { fetchTimings, DEFAULT_METHOD } from '../utils/prayerTimes'
 import { localDateStr } from '../utils/date'
 
 // Для нового пользователя, который ещё ни разу не заходил во вкладку "Намаз"
@@ -23,8 +23,20 @@ export function useAutoPrayerSetup(user) {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         try {
+          // Настройки на сервере уже есть — человек их когда-то задавал (с
+          // другого устройства или до переустановки, когда localStorage был
+          // пуст). Раньше мы всё равно перезаписывали строку с
+          // prayer_notif_enabled: true и дефолтными 30/20/10, молча включая
+          // уведомления обратно тому, кто их специально выключил.
+          const { data: existing } = await supabase
+            .from('prayer_schedules')
+            .select('prayer_notif_enabled')
+            .eq('user_id', user.id)
+            .maybeSingle()
+          if (existing?.prayer_notif_enabled != null) return
+
           const { latitude: lat, longitude: lon } = pos.coords
-          const method    = parseInt(localStorage.getItem('prayer_method') || '15')
+          const method    = parseInt(localStorage.getItem('prayer_method') || String(DEFAULT_METHOD))
           const school    = parseInt(localStorage.getItem('prayer_school') || '0')
           const fajrAngle = parseInt(localStorage.getItem('prayer_fajr')   || '18')
           const ishaAngle = parseInt(localStorage.getItem('prayer_isha')   || '17')

@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
-import { fetchTimings } from '../utils/prayerTimes'
+import { fetchTimings, CUSTOM_METHOD, DEFAULT_METHOD } from '../utils/prayerTimes'
 import { rewardFeedback, tapFeedback } from '../utils/feedback'
 import { clearAllTimers, pushTimer, cancelPrayerNotifs } from '../utils/prayerNotifs'
 import { supabase } from '../supabase/client'
@@ -509,7 +509,12 @@ const pc = {
   iconWrap: { width:44, height:44, borderRadius:12, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 },
   info: { flex:1, display:'flex', flexDirection:'column', gap:1 },
   nameRu: { fontSize:16, fontWeight:600, transition:'color .3s' },
-  nameAr: { fontFamily:"'Scheherazade New',serif", fontSize:16, color:'rgba(201,168,76,.5)', direction:'rtl' },
+  // direction:'rtl' нужен для правильного порядка арабской вязи, но блок при
+  // этом растягивался на всю ширину колонки и текст прижимался к её правому
+  // краю — со стороны выглядело так, будто арабское название висит посреди
+  // карточки, а под русским зияет пустота. alignSelf сжимает блок по
+  // содержимому, и строка встаёт ровно под названием намаза.
+  nameAr: { fontFamily:"'Scheherazade New',serif", fontSize:16, color:'rgba(201,168,76,.5)', direction:'rtl', alignSelf:'flex-start' },
   desc: { fontSize:11, color:'var(--text-dim)' },
   right: { display:'flex', flexDirection:'column', alignItems:'flex-end', gap:4, flexShrink:0, marginRight:6 },
   checkBtn: { width:36, height:36, borderRadius:'50%', border:'1.5px solid var(--border)', background:'var(--bg-card)',
@@ -548,14 +553,45 @@ async function searchCities(query) {
 }
 
 // ── Методы расчёта ────────────────────────────────────────────
+const METHOD_MIGRATED_KEY = 'prayer_method_real_v1'
+
+// До этой правки расчёт ВСЕГДА шёл по углам (method=99), какой бы метод ни был
+// выбран в настройках. Если просто начать отправлять выбранный метод, у всех
+// разом изменятся времена намаза — а это последнее, что можно менять человеку
+// молча. Поэтому тем, кто уже пользовался приложением, оставляем ровно их
+// текущий расчёт, честно назвав его «Свои углы»: захотят настоящий метод —
+// выберут сами и увидят, что время изменилось.
+function initialMethod() {
+  const stored = localStorage.getItem('prayer_method')
+  if (localStorage.getItem(METHOD_MIGRATED_KEY)) {
+    return parseInt(stored || String(DEFAULT_METHOD))
+  }
+  const usedBefore = stored !== null
+    || localStorage.getItem('prayer_mode') !== null
+    || localStorage.getItem('prayer_city') !== null
+  const next = usedBefore ? CUSTOM_METHOD : DEFAULT_METHOD
+  try {
+    localStorage.setItem('prayer_method', String(next))
+    localStorage.setItem(METHOD_MIGRATED_KEY, '1')
+  } catch {}
+  return next
+}
+
+// Номера строго по справочнику Aladhan (api.aladhan.com/v1/methods) — в
+// прежнем списке два из них были перепутаны: под «Россия / СНГ (САМР)» стоял
+// 15 (это Moonsighting Committee Worldwide), а под «Турция» — 14 (а это как
+// раз САМР). Пока метод вообще не отправлялся, ошибка ничего не портила, но
+// теперь он влияет на расчёт, и номера обязаны быть верными.
+// Подпись hint — официальные углы метода, чтобы выбор был осмысленным.
 const CALC_METHODS = [
-  { id: 3,  name: 'Мировая лига (MWL)',  short: 'MWL'  },
-  { id: 15, name: 'Россия / СНГ (САМР)', short: 'САМР' },
-  { id: 14, name: 'Турция (Diyanet)',     short: 'TR'   },
-  { id: 4,  name: 'Умм аль-Кура (КСА)', short: 'UmQ'  },
-  { id: 5,  name: 'Египетский',          short: 'EG'   },
-  { id: 2,  name: 'ISNA (С. Америка)',   short: 'ISNA' },
-  { id: 1,  name: 'Университет Карачи',  short: 'KHI'  },
+  { id: 14, name: 'Россия / СНГ (САМР)', short: 'САМР', hint: 'Фаджр 16° · Иша 15°' },
+  { id: 3,  name: 'Мировая лига (MWL)',  short: 'MWL',  hint: 'Фаджр 18° · Иша 17°' },
+  { id: 13, name: 'Турция (Diyanet)',    short: 'TR',   hint: 'Фаджр 18° · Иша 17°' },
+  { id: 4,  name: 'Умм аль-Кура (КСА)',  short: 'UmQ',  hint: 'Фаджр 18.5° · Иша через 90 мин' },
+  { id: 5,  name: 'Египетский',          short: 'EG',   hint: 'Фаджр 19.5° · Иша 17.5°' },
+  { id: 2,  name: 'ISNA (С. Америка)',   short: 'ISNA', hint: 'Фаджр 15° · Иша 15°' },
+  { id: 1,  name: 'Университет Карачи',  short: 'KHI',  hint: 'Фаджр 18° · Иша 18°' },
+  { id: CUSTOM_METHOD, name: 'Свои углы', short: '°',   hint: 'Подобрать вручную под свою мечеть' },
 ]
 
 // ── Кибла ─────────────────────────────────────────────────────
@@ -1050,7 +1086,7 @@ export default function PrayerPage() {
   // loadTracker (запрошенный до отметки намазов) не затирал стрик нулями
   const todayOverrideRef = useRef(null)
   const togglingRef = useRef(new Set())
-  const [method,    setMethod]    = useState(() => parseInt(localStorage.getItem('prayer_method')  || '15'))
+  const [method,    setMethod]    = useState(initialMethod)
   const [school,    setSchool]    = useState(() => parseInt(localStorage.getItem('prayer_school')  || '0'))
   const [fajrAngle, setFajrAngle] = useState(() => parseInt(localStorage.getItem('prayer_fajr')    || '18'))
   const [ishaAngle, setIshaAngle] = useState(() => parseInt(localStorage.getItem('prayer_isha')    || '17'))
@@ -1136,8 +1172,16 @@ export default function PrayerPage() {
 
   function saveMethod(v)    { setMethod(v);    localStorage.setItem('prayer_method', v)  }
   function saveSchool(v)    { setSchool(v);    localStorage.setItem('prayer_school', v)  }
-  function saveFajr(v)      { setFajrAngle(v); localStorage.setItem('prayer_fajr', v)    }
-  function saveIsha(v)      { setIshaAngle(v); localStorage.setItem('prayer_isha', v)    }
+  // Углы действуют только в режиме «Свои углы» — у готовых методов свои
+  // официальные значения. Поэтому правка угла сама переводит в этот режим,
+  // иначе пользователь двигал бы углы и не понимал, почему ничего не меняется.
+  function useCustomAngles() {
+    if (method === CUSTOM_METHOD) return
+    setMethod(CUSTOM_METHOD)
+    localStorage.setItem('prayer_method', String(CUSTOM_METHOD))
+  }
+  function saveFajr(v)      { setFajrAngle(v); localStorage.setItem('prayer_fajr', v); useCustomAngles() }
+  function saveIsha(v)      { setIshaAngle(v); localStorage.setItem('prayer_isha', v); useCustomAngles() }
 
   // Поиск с задержкой
   function onCityInput(val) {
@@ -1366,19 +1410,55 @@ export default function PrayerPage() {
   useEffect(() => {
     if (!user) { setPrayerPushEnabled(true); return }
     supabase.from('prayer_schedules').select('prayer_notif_enabled').eq('user_id', user.id).maybeSingle()
-      .then(({ data }) => { setPrayerPushEnabled(data?.prayer_notif_enabled !== false) })
+      .then(({ data, error }) => {
+        // При ошибке запроса (нет сети, таймаут) data === null, и прежняя
+        // проверка "!== false" давала true — выключенные уведомления сами
+        // включались обратно, стоило открыть вкладку без связи. Падаем на
+        // последнее известное решение пользователя, а не на "включено".
+        if (error) {
+          setPrayerPushEnabled(localStorage.getItem('notif_prayer') !== 'false')
+          return
+        }
+        const enabled = data?.prayer_notif_enabled !== false
+        localStorage.setItem('notif_prayer', String(enabled))
+        setPrayerPushEnabled(enabled)
+      })
   }, [user?.id])
 
-  async function togglePrayerPush() {
-    const next = !prayerPushEnabled
+  // Единственное место, где меняется общий выключатель. Уведомления шлёт
+  // сервер, поэтому решает именно запись в БД: если она не прошла, тумблер
+  // обязан вернуться назад, а не показывать "выключено" при работающей
+  // рассылке — это и выглядело как "выключил, а всё равно приходит".
+  async function setPrayerPushEnabled_persist(next) {
+    const prev = prayerPushEnabled
     setPrayerPushEnabled(next)
+    localStorage.setItem('notif_prayer', String(next))
     if (!next) cancelPrayerNotifs()
     if (!user) return
     const { error } = await supabase.from('prayer_schedules').upsert(
       { user_id: user.id, prayer_notif_enabled: next },
       { onConflict: 'user_id' }
     )
-    if (error) console.warn('[Prayer] toggle push failed:', error.message)
+    if (error) {
+      console.warn('[Prayer] toggle push failed:', error.message)
+      setPrayerPushEnabled(prev)
+      localStorage.setItem('notif_prayer', String(prev))
+      setSaveError('Не удалось сохранить настройку — проверьте интернет')
+      setTimeout(() => setSaveError(''), 5000)
+    }
+  }
+
+  async function togglePrayerPush() {
+    const next = !prayerPushEnabled
+    // Включаем обратно — возвращаем последний выбор пользователя. Если его нет
+    // (первый запуск), берём напоминания по умолчанию, иначе тумблер загорелся
+    // бы без единой выбранной кнопки, то есть включённым, но бесполезным.
+    if (next && remind.length === 0) {
+      const def = [30, 20, 10]
+      setRemind(def)
+      localStorage.setItem('prayerRemind', JSON.stringify(def))
+    }
+    await setPrayerPushEnabled_persist(next)
   }
 
   // Планируем уведомления при наличии данных
@@ -1412,10 +1492,19 @@ export default function PrayerPage() {
     const today = localDateStr()
     const utcOffset = -new Date().getTimezoneOffset()
     const prayerTimings = { Fajr: timings.Fajr, Dhuhr: timings.Dhuhr, Asr: timings.Asr, Maghrib: timings.Maghrib, Isha: timings.Isha }
+    // prayer_notif_enabled здесь СОЗНАТЕЛЬНО не пишется. Этот эффект — фоновая
+    // синхронизация времён намаза, он срабатывает сам по себе (обновились
+    // timings, сменился город, пересчитались напоминания). Пока он писал сюда
+    // ещё и тумблер, выключение из Профиля могло молча откатиться: Профиль
+    // отправляет false, страница "Намаз" в этот момент держит в состоянии
+    // прочитанное ранее true — и последним в базу прилетал именно её true.
+    // Пользователь видел выключенный тумблер, а push продолжал приходить.
+    // Флаг меняется ТОЛЬКО явным действием: togglePrayerPush здесь и
+    // togglePrayerNotif в Профиле.
     // Без .then()/await запрос у supabase-js строится, но реально не отправляется —
     // его fetch() запускается лениво внутри .then(), который раньше тут не вызывался.
     supabase.from('prayer_schedules').upsert(
-      { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset, prayer_notif_enabled: prayerPushEnabled },
+      { user_id: user.id, date: today, timings: prayerTimings, remind_before: remind, utc_offset: utcOffset },
       { onConflict: 'user_id' }
     ).then(({ error }) => {
       if (error) console.warn('[Prayer] schedule sync failed:', error.message)
@@ -1469,15 +1558,33 @@ export default function PrayerPage() {
     hijriStr = `${hijri.day} ${HIJRI_MONTHS[monthNum] || hijri.month?.en || ''} ${hijri.year} г.х.`
   }
 
+  // Тумблер и кнопки 30/20/10 — одно целое, а не две независимые настройки.
+  // Выключен тумблер = ни одна кнопка не выбрана. Выбрана хоть одна кнопка =
+  // тумблер включён. Раньше они жили порознь: кнопки были видны только при
+  // включённом тумблере, а снятие всех трёх оставляло тумблер включённым, и
+  // уведомление о наступлении времени намаза продолжало приходить — со стороны
+  // это выглядело как "всё выключил, а оно идёт".
+  // Само уведомление "🕌 Время намаза" отдельной кнопки не имеет: оно приходит
+  // всегда, пока тумблер включён (при любой комбинации выбранных минут).
+  const activeRemind = prayerPushEnabled ? remind : []
+
   async function toggleRemind(min) {
-    // Всегда переключаем — не блокируем на разрешении
-    setRemind(prev => {
-      const next = prev.includes(min) ? prev.filter(x => x !== min) : [...prev, min]
+    const next = activeRemind.includes(min)
+      ? activeRemind.filter(x => x !== min)
+      : [...activeRemind, min].sort((a, b) => b - a)
+
+    if (next.length === 0) {
+      // Сняли последнюю кнопку — гасим тумблер. remind не трогаем: он остаётся
+      // памятью о последнем выборе, чтобы вернуть его при повторном включении.
+      await setPrayerPushEnabled_persist(false)
+    } else {
+      setRemind(next)
       localStorage.setItem('prayerRemind', JSON.stringify(next))
-      return next
-    })
+      if (!prayerPushEnabled) await setPrayerPushEnabled_persist(true)
+    }
+
     // Запрашиваем разрешение параллельно (не блокирует UI)
-    if (!notifOk) {
+    if (next.length > 0 && !notifOk) {
       const ok = await requestNotifPerm()
       setNotifOk(ok)
       if (ok) sendNotif('🔔 Nur Hayat', 'Напоминания о намазе включены!')
@@ -1710,27 +1817,34 @@ export default function PrayerPage() {
                 Нажмите на {prayerPushEnabled ? '🔔' : '🔕'}, чтобы {prayerPushEnabled ? 'выключить' : 'включить'} все уведомления о намазе
               </div>
 
-              {prayerPushEnabled ? (
-                <>
-                  <div style={s.notifDesc}>За сколько минут до намаза напоминать:</div>
+              {/* Кнопки видны всегда, даже при выключенном тумблере — иначе
+                  включить "только за 10 минут" одним нажатием было невозможно:
+                  сначала пришлось бы искать тумблер. Нажатие на любую кнопку
+                  включает уведомления само. */}
+              <div style={s.notifDesc}>За сколько минут до намаза напоминать:</div>
 
-                  <div style={s.reminderBtns}>
-                    {[10, 20, 30].map(min => (
-                      <button key={min} style={{
-                        ...s.remBtn,
-                        background: remind.includes(min) ? 'rgba(72,199,120,.15)' : 'var(--bg-card)',
-                        border: remind.includes(min) ? '1.5px solid #48c778' : '1px solid var(--border)',
-                        color: remind.includes(min) ? '#48c778' : 'var(--text-muted)',
-                        fontWeight: remind.includes(min) ? 600 : 400,
-                      }} onClick={() => toggleRemind(min)}>
-                        {remind.includes(min) ? '✓ ' : ''}{min} мин
-                      </button>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div style={s.notifDesc}>Уведомления о намазе выключены — не будут приходить ни напоминания, ни push о наступлении времени.</div>
-              )}
+              <div style={s.reminderBtns}>
+                {[30, 20, 10].map(min => {
+                  const on = activeRemind.includes(min)
+                  return (
+                    <button key={min} style={{
+                      ...s.remBtn,
+                      background: on ? 'rgba(72,199,120,.15)' : 'var(--bg-card)',
+                      border: on ? '1.5px solid #48c778' : '1px solid var(--border)',
+                      color: on ? '#48c778' : 'var(--text-muted)',
+                      fontWeight: on ? 600 : 400,
+                    }} onClick={() => toggleRemind(min)}>
+                      {on ? '✓ ' : ''}{min} мин
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div style={s.notifDesc}>
+                {prayerPushEnabled
+                  ? 'Плюс уведомление в момент наступления намаза — оно приходит всегда, пока напоминания включены.'
+                  : 'Уведомления о намазе выключены. Нажмите на любую кнопку выше, чтобы включить.'}
+              </div>
             </div>
 
             {/* ── Настройки расчёта ── */}
@@ -1754,7 +1868,7 @@ export default function PrayerPage() {
 
                   {/* Подсказка */}
                   <div style={s.tipBox}>
-                    💡 Если время намаза не совпадает с вашей мечетью — выберите метод <b>Россия/СНГ (САМР)</b> и подберите углы Фаджр и Иша вручную до совпадения. Настройки сохраняются автоматически.
+                    💡 Если время намаза не совпадает с вашей мечетью — попробуйте другой метод расчёта. Не подошёл ни один — выберите <b>«Свои углы»</b> и подберите Фаджр и Ишу вручную до совпадения. Настройки сохраняются автоматически.
                   </div>
 
                   {/* Метод */}
@@ -1768,7 +1882,10 @@ export default function PrayerPage() {
                           border: `1px solid ${method === m.id ? 'rgba(201,168,76,.4)' : 'transparent'}`,
                           color: method === m.id ? 'var(--gold)' : 'var(--text)',
                         }} onClick={() => saveMethod(m.id)}>
-                          <span style={{ flex:1, textAlign:'left' }}>{m.name}</span>
+                          <span style={{ flex:1, textAlign:'left', display:'flex', flexDirection:'column', gap:1 }}>
+                            <span>{m.name}</span>
+                            <span style={{ fontSize:10.5, color:'var(--text-dim)' }}>{m.hint}</span>
+                          </span>
                           {method === m.id && <span style={{ fontSize:12 }}>✓</span>}
                           <span style={{ fontSize:11, color:'var(--text-dim)', minWidth:32, textAlign:'right' }}>{m.short}</span>
                         </button>
@@ -1793,7 +1910,11 @@ export default function PrayerPage() {
                     </div>
                   </div>
 
-                  {/* Углы Фаджр и Иша */}
+                  {/* Углы Фаджр и Иша — только для режима «Свои углы». У готовых
+                      методов углы свои, официальные, и эти кнопки на них не
+                      влияли бы: раньше они висели всегда и создавали ложное
+                      впечатление, что настраивают любой выбранный метод. */}
+                  {method === CUSTOM_METHOD && (
                   <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
                     <div>
                       <div style={s.settingsLabel}>Угол Фаджр: <span style={{ color:'var(--gold)' }}>{fajrAngle}°</span></div>
@@ -1822,6 +1943,7 @@ export default function PrayerPage() {
                       </div>
                     </div>
                   </div>
+                  )}
                 </div>
               )}
             </div>
