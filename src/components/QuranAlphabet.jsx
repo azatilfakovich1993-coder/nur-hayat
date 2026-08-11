@@ -365,7 +365,14 @@ export default function QuranAlphabet({ onClose }) {
     if (url) playAudio(url)
   }
 
+  // Порядок разбора — строго от самого верхнего слоя к нижнему, иначе "назад"
+  // перескакивает через шаг. Так и было: при развёрнутом видео кнопка сразу
+  // закрывала букву и выбрасывала на список алфавита, хотя человек ожидал
+  // вернуться к экрану буквы. То же самое происходило с видео "похожих букв",
+  // открытым поверх экрана.
   function back() {
+    if (modalVideo)    { setModalVideo(null);     return }
+    if (videoExpanded) { setVideoExpanded(false); return }
     if (showQuiz) { setShowQuiz(false); return }
     if (item) {
       // Начисляем +5 НУР за букву алфавита — только первый раз при закрытии
@@ -560,79 +567,95 @@ export default function QuranAlphabet({ onClose }) {
         const l = item
         const mc = MAKHRAJ_COLOR[l.makhraj]
         const g  = MAKHRAJ_GROUPS.find(x => x.id === l.makhraj)
+        const similar = getSimilarGroupsForLetter(l.id)
         return (
           <>
-            {videoError !== l.id && videoExpanded && videoSrc && (
-              <video
-                key={l.id}
-                src={videoSrc}
-                controls
-                playsInline
-                style={s.letterVideo}
-                onError={() => setVideoError(l.id)}
-                onPlay={() => markVideoWatched(l.id)}
-              />
-            )}
-            <div style={s.mediaGrid}>
-              {videoSrc && videoError !== l.id && (
-                <button style={{ ...s.mediaSquare, borderColor: mc + '55' }} onClick={() => setVideoExpanded(true)}>
+            {/* Порядок экрана: сначала сама буква, затем её видеоурок, затем
+                разбор. Раньше видео, аудио и «разница букв» стояли НАД
+                прокруткой — сверху шла полоса кнопок, а буква, ради которой
+                экран и открывают, оказывалась третьей. */}
+            <div style={s.scroll} className="scroll-y">
+              {/* Большая буква. Кнопка произношения теперь здесь же: звук —
+                  такая же часть буквы, как её начертание, и отдельного
+                  квадрата размером с видео он не заслуживает. */}
+              <div style={{ ...s.bigCard, borderColor: mc + '45' }}>
+                <div style={{ ...s.bigAr, color: mc }} className="arabic">{l.ar}</div>
+                <div style={{ ...s.bigCardInfo, flex: 1 }}>
+                  <div style={{ ...s.bigArName, color: mc }} className="arabic">{l.nameAr}</div>
+                  <div style={s.bigRuName}>{l.name}</div>
+                  {g && <div style={{ ...s.badge, borderColor: g.border, background: g.bg, color: g.color }}>{g.nameAr} · {g.name}</div>}
+                </div>
+                <button style={{ ...s.letterAudioBtn, borderColor: mc, color: mc }}
+                  onClick={() => handlePlayUrl(l.audio)}
+                  title={ttsActive ? 'Остановить' : 'Прослушать произношение'}>
+                  {ttsActive ? '⏹' : '▶'}
+                </button>
+              </div>
+
+              {/* Видеоурок — широким кадром, а не маленьким квадратом: это
+                  урок на несколько минут, а не кнопка. */}
+              {videoExpanded && videoSrc && videoError !== l.id ? (
+                <video
+                  key={l.id}
+                  src={videoSrc}
+                  controls
+                  autoPlay
+                  playsInline
+                  style={s.letterVideo}
+                  onError={() => setVideoError(l.id)}
+                  onPlay={() => markVideoWatched(l.id)}
+                />
+              ) : videoSrc && videoError !== l.id ? (
+                <button style={{ ...s.videoBanner, borderColor: mc + '55' }} onClick={() => setVideoExpanded(true)}>
                   <video
                     src={videoSrc}
                     muted
                     playsInline
                     preload="metadata"
-                    style={s.mediaSquareVideo}
+                    style={s.videoBannerEl}
                     onError={() => setVideoError(l.id)}
                     onLoadedMetadata={e => { e.currentTarget.currentTime = 1 }}
                   />
-                  <div style={s.mediaSquareShade} />
-                  <div style={{ ...s.mediaSquarePlay, borderColor: mc }}>▶</div>
-                  <span style={s.mediaSquareCaption}>Видео</span>
+                  <div style={s.videoBannerShade} />
+                  <div style={{ ...s.videoBannerPlay, borderColor: mc }}>▶</div>
+                  <span style={s.videoBannerLabel}>Урок произношения</span>
                 </button>
+              ) : videoLoading && !videoSrc && videoError !== l.id ? (
+                <div style={{ ...s.videoBanner, borderColor: mc + '30', cursor: 'default' }}>
+                  <span style={s.videoBannerLabel}>⏳ Загрузка урока…</span>
+                </div>
+              ) : videoError === l.id ? (
+                <button style={{ ...s.videoBanner, borderColor: 'rgba(255,90,90,.4)' }} onClick={() => setVideoError(null)}>
+                  <span style={s.videoBannerLabel}>⚠️ Не удалось загрузить — нажмите, чтобы повторить</span>
+                </button>
+              ) : null}
+
+              {videoSrc && videoError !== l.id && (
+                <a href="https://www.youtube.com/@Ruslan_Malikov" target="_blank" rel="noopener noreferrer" style={s.authorCredit}>
+                  Видео: Руслан Маликов ↗
+                </a>
               )}
-              {videoLoading && !videoSrc && videoError !== l.id && (
-                <div style={{ ...s.mediaSquare, borderColor: mc + '30' }}>
-                  <span style={{ fontSize: 18 }}>⏳</span>
-                  <span style={s.mediaSquareCaption}>Загрузка…</span>
+
+              {/* Сравнение похожих букв — тоже видео, и это должно быть видно.
+                  Раньше строка выглядела обычным пунктом списка с иконкой ⇄,
+                  и понять, что за ней ролик, было невозможно. */}
+              {similar.length > 0 && (
+                <div style={s.sec}>
+                  <div style={s.secTitle}>Похожие буквы · видео</div>
+                  {similar.map(gr => (
+                    <button key={gr.video} style={s.videoListRow}
+                      onClick={async () => { const url = await getExtraVideoUrl(gr.video); setModalVideo({ url, title: gr.title }) }}>
+                      <div style={{ ...s.videoListThumb, borderColor: mc + '55' }}>
+                        <div style={{ ...s.videoListThumbPlay, borderColor: mc }}>▶</div>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={s.videoListTitle}>{gr.title}</div>
+                        <div style={{ ...s.videoListBadge, borderColor: mc + '55', color: mc }}>ВИДЕО</div>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               )}
-              {videoError === l.id && (
-                <button style={{ ...s.mediaSquare, borderColor: 'rgba(255,90,90,.4)' }} onClick={() => setVideoError(null)}>
-                  <span style={{ fontSize: 18 }}>⚠️</span>
-                  <span style={s.mediaSquareCaption}>Повторить</span>
-                </button>
-              )}
-              <button style={{ ...s.mediaSquare, borderColor: mc + '55' }} onClick={() => handlePlayUrl(l.audio)}>
-                <span style={{ ...s.mediaSquareIcon, color: mc }}>{ttsActive ? '⏹' : '▶'}</span>
-                <span style={s.mediaSquareCaption}>{ttsActive ? 'Стоп' : 'Аудио'}</span>
-              </button>
-            </div>
-            {videoSrc && videoError !== l.id && (
-              <a href="https://www.youtube.com/@Ruslan_Malikov" target="_blank" rel="noopener noreferrer" style={s.authorCredit}>
-                Видео: Руслан Маликов ↗
-              </a>
-            )}
-            {getSimilarGroupsForLetter(l.id).length > 0 && (
-              <div style={s.mediaCol}>
-                {getSimilarGroupsForLetter(l.id).map(g => (
-                  <button key={g.video} style={s.mediaRow}
-                    onClick={async () => { const url = await getExtraVideoUrl(g.video); setModalVideo({ url, title: g.title }) }}>
-                    <span style={{ ...s.mediaIconCircle, background: mc + '15', borderColor: mc + '40', color: mc, fontSize: 15 }}>⇄</span>
-                    <span style={s.mediaLabel}>{g.title}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <div style={s.scroll} className="scroll-y">
-              {/* Большая буква */}
-              <div style={{ ...s.bigCard, borderColor: mc + '45' }}>
-                <div style={{ ...s.bigAr, color: mc }} className="arabic">{l.ar}</div>
-                <div style={s.bigCardInfo}>
-                  <div style={{ ...s.bigArName, color: mc }} className="arabic">{l.nameAr}</div>
-                  <div style={s.bigRuName}>{l.name}</div>
-                  {g && <div style={{ ...s.badge, borderColor: g.border, background: g.bg, color: g.color }}>{g.nameAr} · {g.name}</div>}
-                </div>
-              </div>
 
               {/* Слоги */}
               <div style={s.sec}>
@@ -1145,69 +1168,66 @@ const s = {
   letterVideo: {
     flexShrink: 0, width: '100%', maxHeight: '38vh',
     background: '#000', display: 'block',
+    borderRadius: 14, marginBottom: 8,
   },
-  mediaCol: {
-    flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8,
-    padding: '0 16px 10px', borderBottom: '1px solid var(--border)',
+
+  // ── Видеоурок буквы: широкий кадр вместо маленького квадрата ──
+  videoBanner: {
+    position: 'relative', width: '100%', aspectRatio: '16 / 9', overflow: 'hidden',
+    borderRadius: 14, border: '1.5px solid', background: '#000',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', outline: 'none', padding: 0, marginBottom: 8,
+    fontFamily: 'var(--font-ui)',
   },
-  mediaGrid: {
-    flexShrink: 0, display: 'flex', gap: 8,
-    padding: '10px 16px', borderBottom: '1px solid var(--border)',
-  },
-  mediaSquare: {
-    width: 68, height: 68, flexShrink: 0, position: 'relative', overflow: 'hidden',
-    borderRadius: 12, border: '1.5px solid', background: 'rgba(255,255,255,.04)',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    cursor: 'pointer', outline: 'none', padding: 0,
-  },
-  mediaSquareVideo: {
+  videoBannerEl: {
     position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover',
   },
-  mediaSquareShade: {
+  videoBannerShade: {
     position: 'absolute', inset: 0,
-    background: 'linear-gradient(180deg,rgba(0,0,0,.1),rgba(0,0,0,.55))',
+    background: 'linear-gradient(180deg,rgba(0,0,0,.15),rgba(0,0,0,.6))',
   },
-  mediaSquarePlay: {
-    position: 'absolute', top: '38%', left: '50%', transform: 'translate(-50%,-50%)',
-    width: 20, height: 20, borderRadius: '50%', border: '1.5px solid',
-    background: 'rgba(0,0,0,.5)', color: '#fff', fontSize: 8,
+  videoBannerPlay: {
+    position: 'relative', width: 46, height: 46, borderRadius: '50%', border: '2px solid',
+    background: 'rgba(0,0,0,.42)', color: '#fff', fontSize: 15,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  mediaSquareIcon: { fontSize: 20, lineHeight: 1 },
-  mediaSquareCaption: {
-    position: 'absolute', left: 0, right: 0, bottom: 0, zIndex: 1,
-    fontSize: 9, fontWeight: 700, color: '#fff', textAlign: 'center',
-    padding: '2px 0 4px', background: 'rgba(0,0,0,.35)',
+  videoBannerLabel: {
+    position: 'absolute', left: 10, bottom: 9, zIndex: 1,
+    fontSize: 11, color: 'rgba(255,255,255,.9)',
+    background: 'rgba(0,0,0,.5)', padding: '3px 9px', borderRadius: 8,
   },
-  mediaRow: {
-    display: 'flex', alignItems: 'center', gap: 10,
+
+  // ── Строка ролика «похожие буквы»: миниатюра + пометка ВИДЕО ──
+  videoListRow: {
+    display: 'flex', alignItems: 'center', gap: 10, width: '100%',
     background: 'rgba(255,255,255,.04)', border: '1px solid var(--border)',
-    borderRadius: 12, padding: '7px 10px', cursor: 'pointer', outline: 'none',
-    fontFamily: 'var(--font-ui)', textAlign: 'left',
+    borderRadius: 12, padding: '8px 10px 8px 8px', cursor: 'pointer', outline: 'none',
+    fontFamily: 'var(--font-ui)', textAlign: 'left', marginBottom: 6,
   },
-  mediaThumbSq: {
-    position: 'relative', flexShrink: 0, width: 34, height: 34,
-    borderRadius: 9, border: '1.5px solid', background: '#000', overflow: 'hidden',
-  },
-  videoThumbEl: {
-    position: 'absolute', inset: 0, width: '100%', height: '100%',
-    objectFit: 'cover',
-  },
-  videoThumbShade: {
-    position: 'absolute', inset: 0,
-    background: 'linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.4))',
-  },
-  mediaPlayDot: {
-    position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)',
-    width: 16, height: 16, borderRadius: '50%', border: '1.5px solid',
-    background: 'rgba(0,0,0,.5)', color: '#fff', fontSize: 7,
+  videoListThumb: {
+    position: 'relative', flexShrink: 0, width: 62, aspectRatio: '16 / 10',
+    borderRadius: 9, border: '1.5px solid', overflow: 'hidden',
+    background: 'linear-gradient(150deg,#1b2740,#0d1524)',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  mediaIconCircle: {
-    width: 34, height: 34, borderRadius: '50%', flexShrink: 0, border: '1.5px solid',
-    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13,
+  videoListThumbPlay: {
+    width: 20, height: 20, borderRadius: '50%', border: '1.5px solid',
+    background: 'rgba(0,0,0,.45)', color: '#fff', fontSize: 8,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
-  mediaLabel: { fontSize: 14, fontWeight: 700, color: 'var(--text)' },
+  videoListTitle: { fontSize: 13, fontWeight: 600, color: 'var(--text)', lineHeight: 1.3 },
+  videoListBadge: {
+    display: 'inline-block', marginTop: 3, fontSize: 9, fontWeight: 700,
+    letterSpacing: '.06em', border: '1px solid', borderRadius: 5, padding: '0 5px',
+  },
+
+  // Кнопка произношения внутри карточки буквы
+  letterAudioBtn: {
+    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+    border: '1.5px solid', background: 'rgba(255,255,255,.04)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontSize: 14, cursor: 'pointer', outline: 'none', fontFamily: 'var(--font-ui)',
+  },
 
   // Модалка видео (сравнения похожих букв / практика)
   videoModalOverlay: {
