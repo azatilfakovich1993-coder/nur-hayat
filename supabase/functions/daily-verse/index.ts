@@ -51,6 +51,11 @@ const DAILY_VERSES = [
 
 const NOTIF_HOUR = 8 // должно совпадать с NOTIF_HOUR в useDailyVerseNotif.js (локальное время)
 
+const DAY_MIN = 1440
+const normMin = (m: number) => ((m % DAY_MIN) + DAY_MIN) % DAY_MIN
+// Окно [start, start+len) с корректным переходом через полночь.
+const inWindow = (nowMin: number, start: number, len: number) => normMin(nowMin - start) < len
+
 serve(async (req) => {
   const auth = req.headers.get('authorization')
   if (auth !== `Bearer ${Deno.env.get('CRON_SECRET')}`) {
@@ -87,9 +92,9 @@ serve(async (req) => {
   // пока для него не наступит нужный момент.
   const { data: schedules } = await supabase
     .from('prayer_schedules')
-    .select('user_id, utc_offset, daily_verse_enabled')
+    .select('user_id, utc_offset, daily_verse_enabled, daily_verse_local_until')
 
-  const scheduleByUser = new Map<string, { utc_offset: number | null; daily_verse_enabled: boolean | null }>()
+  const scheduleByUser = new Map<string, { utc_offset: number | null; daily_verse_enabled: boolean | null; daily_verse_local_until: string | null }>()
   for (const s of schedules ?? []) scheduleByUser.set(s.user_id, s)
 
   const { data: tokens } = await supabase
@@ -121,8 +126,18 @@ serve(async (req) => {
     if (!schedule || schedule.utc_offset == null) continue
     if (schedule.daily_verse_enabled === false) continue
 
-    const targetUtcMin = ((NOTIF_HOUR * 60 - schedule.utc_offset) % 1440 + 1440) % 1440
-    if (!(nowUtcMin >= targetUtcMin && nowUtcMin < targetUtcMin + 10)) continue
+    const targetUtcMin = normMin(NOTIF_HOUR * 60 - schedule.utc_offset)
+    if (!inWindow(nowUtcMin, targetUtcMin, 10)) continue
+
+    // Телефон уже поставил локальные будильники "Аята дня" на этот день
+    // (useDailyVerseNotif.js планирует на 30 дней вперёд и отмечает докуда) —
+    // тогда android-токены пропускаем, иначе пользователь получал ровно то же
+    // уведомление дважды в одну и ту же минуту. web/iOS обслуживаем всегда.
+    const userLocalToday = new Date(now.getTime() + schedule.utc_offset * 60000).toISOString().slice(0, 10)
+    const localCovers = schedule.daily_verse_local_until != null
+      && schedule.daily_verse_local_until >= userLocalToday
+    const targets = localCovers ? userTokens.filter(t => t.platform !== 'android') : userTokens
+    if (!targets.length) continue
 
     const { data: claimed } = await supabase
       .from('notif_log')
@@ -130,7 +145,7 @@ serve(async (req) => {
       .select()
     if (!claimed?.length) continue
 
-    for (const { token, platform } of userTokens) {
+    for (const { token, platform } of targets) {
       if (platform === 'android') {
         try {
           fcmAccessToken ??= await getFcmAccessToken(serviceAccount)

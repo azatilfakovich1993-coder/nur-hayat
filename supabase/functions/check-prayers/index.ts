@@ -35,23 +35,32 @@ serve(async (req) => {
 
   const { data: schedules, error: schedulesErr } = await supabase
     .from('prayer_schedules')
-    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled, local_scheduled_date')
+    .select('user_id, timings, remind_before, utc_offset, prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled, local_scheduled_date, azkar_local_until')
 
   if (schedulesErr) console.error('[check-prayers] schedules query failed:', schedulesErr)
   if (!schedules?.length) {
     return new Response(JSON.stringify({ sent: 0, checked: 0 }))
   }
 
-  const todayStr = now.toISOString().slice(0, 10)
+  const DAY_MIN = 1440
+  // Приводим "минуту суток" к [0,1440). Без этого намаз, который по UTC
+  // попадает в соседние сутки, не совпадал с nowUtcMin НИКОГДА, и push по нему
+  // не уходил ни разу: Фаджр 02:40 в Москве (UTC+3) даёт 160-180 = -20, а
+  // nowUtcMin всегда 0..1439. Так же ломалась поздняя Иша в западных поясах (>1440).
+  const normMin = (m: number) => ((m % DAY_MIN) + DAY_MIN) % DAY_MIN
+  // Окно [start, start+len) с корректным переходом через полночь.
+  const inWindow = (nowMin: number, start: number, len: number) => normMin(nowMin - start) < len
 
   // Идемпотентность: без этого одно и то же событие (напр. "20 мин до Фаджра")
   // уходило до 5 раз подряд, пока держится 5-минутное окно ниже — сколько бы
   // раз за это окно ни дёрнул функцию внешний cron. claim() отправляет только
-  // тому, кто первым "застолбил" tag на сегодня.
-  async function claim(userId: string, tag: string): Promise<boolean> {
+  // тому, кто первым "застолбил" tag на сегодня. Дата — локальная для
+  // пользователя, а не UTC: иначе ночной Фаджр (23:40 UTC предыдущих суток)
+  // и дневные намазы попадали бы в разные "дни" и дедупликация разъезжалась.
+  async function claim(userId: string, tag: string, onDate: string): Promise<boolean> {
     const { data, error } = await supabase
       .from('notif_log')
-      .upsert({ user_id: userId, tag, sent_on: todayStr }, { onConflict: 'user_id,tag,sent_on', ignoreDuplicates: true })
+      .upsert({ user_id: userId, tag, sent_on: onDate }, { onConflict: 'user_id,tag,sent_on', ignoreDuplicates: true })
       .select()
     if (error) { console.error('[check-prayers] claim failed:', error.message); return true }
     return (data?.length ?? 0) > 0
@@ -96,7 +105,7 @@ serve(async (req) => {
     try {
     const { user_id, timings, remind_before, utc_offset,
             prayer_notif_enabled, morning_adhkar_time, evening_adhkar_time, azkar_notif_enabled,
-            local_scheduled_date } = schedule
+            local_scheduled_date, azkar_local_until } = schedule
 
     const { data: tokens } = await supabase
       .from('push_tokens')
@@ -105,17 +114,30 @@ serve(async (req) => {
 
     if (!tokens?.length) continue
 
+    // Без часового пояса нельзя посчитать ни одно время — раньше здесь
+    // получался NaN, new Date(NaN).toISOString() кидал исключение, и
+    // пользователь молча выпадал из рассылки целиком без внятной причины.
+    if (utc_offset == null) {
+      console.warn('[check-prayers] utc_offset не задан для', user_id, '— пропускаем')
+      continue
+    }
+
     // На Android телефон сам ставит локальные будильники на намаз, пока
     // приложение открывалось сегодня (см. PrayerPage.jsx) — раньше сервер
     // слал push независимо от этого, и Android-пользователь гарантированно
     // получал двойное уведомление на каждое событие намаза. Если телефон
     // уже отметился (local_scheduled_date = сегодня по его локальному
     // времени), для намазов не шлём на android-токены — только на
-    // web/ios, у которых локального будильника нет. Азкары не трогаем —
-    // для них локального будильника нет вообще ни на одной платформе.
+    // web/ios, у которых локального будильника нет.
     const userLocalToday = new Date(now.getTime() + (utc_offset as number) * 60000).toISOString().slice(0, 10)
     const localCoversToday = local_scheduled_date === userLocalToday
     const prayerTokens = localCoversToday ? tokens.filter(t => t.platform !== 'android') : tokens
+
+    // То же самое для азкаров: телефон ставит их сразу на 30 дней вперёд и
+    // отмечает, докуда (см. useAzkarNotif.js), поэтому тут сравнение с датой
+    // конца покрытия, а не с одним сегодняшним днём, как у намаза.
+    const azkarLocalCovers = azkar_local_until != null && azkar_local_until >= userLocalToday
+    const azkarTokens = azkarLocalCovers ? tokens.filter(t => t.platform !== 'android') : tokens
 
     // ── Уведомления намазов ──────────────────────────────────
     if (prayer_notif_enabled !== false && timings && prayerTokens.length > 0) {
@@ -124,15 +146,15 @@ serve(async (req) => {
         if (!name) continue
 
         const [h, m] = (localTimeStr as string).split(':').map(Number)
-        const prayerUtcMin = h * 60 + m - (utc_offset as number)
+        const prayerUtcMin = normMin(h * 60 + m - (utc_offset as number))
 
         // За X минут до намаза
         for (const remindMin of remind_before as number[]) {
-          const notifyAt = prayerUtcMin - remindMin
+          const notifyAt = normMin(prayerUtcMin - remindMin)
           const tag = `prayer-${prayerId}-${remindMin}`
           // Окно шире, чем интервал cron (5 мин) — с запасом на задержку
           // самого вызова. claim() всё равно не даст отправить дважды.
-          if (nowUtcMin >= notifyAt && nowUtcMin < notifyAt + 10 && await claim(user_id, tag)) {
+          if (inWindow(nowUtcMin, notifyAt, 10) && await claim(user_id, tag, userLocalToday)) {
             const payload = {
               title: `🔔 До ${name} — ${remindMin} мин`,
               body:  `Намаз в ${(localTimeStr as string).slice(0, 5)}`,
@@ -145,7 +167,7 @@ serve(async (req) => {
 
         // В момент намаза
         const atTimeTag = `prayer-${prayerId}-0`
-        if (nowUtcMin >= prayerUtcMin && nowUtcMin < prayerUtcMin + 10 && await claim(user_id, atTimeTag)) {
+        if (inWindow(nowUtcMin, prayerUtcMin, 10) && await claim(user_id, atTimeTag, userLocalToday)) {
           const payload = {
             title: `🕌 Время ${name}!`,
             body:  'Настало время намаза',
@@ -158,32 +180,32 @@ serve(async (req) => {
     }
 
     // ── Утренние азкары ──────────────────────────────────────
-    if (morning_adhkar_time && azkar_notif_enabled !== false) {
+    if (morning_adhkar_time && azkar_notif_enabled !== false && azkarTokens.length > 0) {
       const [mh, mm] = (morning_adhkar_time as string).split(':').map(Number)
-      const morningUtcMin = mh * 60 + mm - (utc_offset as number)
-      if (nowUtcMin >= morningUtcMin && nowUtcMin < morningUtcMin + 10 && await claim(user_id, 'adhkar-morning')) {
+      const morningUtcMin = normMin(mh * 60 + mm - (utc_offset as number))
+      if (inWindow(nowUtcMin, morningUtcMin, 10) && await claim(user_id, 'adhkar-morning', userLocalToday)) {
         const payload = {
           title: '🌅 Утренние азкары',
           body:  'Время для утренних зикров — начни день с поминания Аллаха',
           url:   '/learn',
           tag:   'adhkar-morning',
         }
-        sent += await sendToUser(user_id, payload, tokens)
+        sent += await sendToUser(user_id, payload, azkarTokens)
       }
     }
 
     // ── Вечерние азкары ──────────────────────────────────────
-    if (evening_adhkar_time && azkar_notif_enabled !== false) {
+    if (evening_adhkar_time && azkar_notif_enabled !== false && azkarTokens.length > 0) {
       const [eh, em] = (evening_adhkar_time as string).split(':').map(Number)
-      const eveningUtcMin = eh * 60 + em - (utc_offset as number)
-      if (nowUtcMin >= eveningUtcMin && nowUtcMin < eveningUtcMin + 10 && await claim(user_id, 'adhkar-evening')) {
+      const eveningUtcMin = normMin(eh * 60 + em - (utc_offset as number))
+      if (inWindow(nowUtcMin, eveningUtcMin, 10) && await claim(user_id, 'adhkar-evening', userLocalToday)) {
         const payload = {
           title: '🌆 Вечерние азкары',
           body:  'Время для вечерних зикров — заверши день словами благодарности',
           url:   '/learn',
           tag:   'adhkar-evening',
         }
-        sent += await sendToUser(user_id, payload, tokens)
+        sent += await sendToUser(user_id, payload, azkarTokens)
       }
     }
     } catch (err) {

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth'
 import { usePushNotifications } from './hooks/usePushNotifications'
 import { useFcmToken } from './hooks/useFcmToken'
 import { useDailyVerseNotif } from './hooks/useDailyVerseNotif'
+import { useAzkarNotif } from './hooks/useAzkarNotif'
 import { useIslamicHolidayNotif } from './hooks/useIslamicHolidayNotif'
 import { useSyncUtcOffset } from './hooks/useSyncUtcOffset'
 import { useAutoPrayerSetup } from './hooks/useAutoPrayerSetup'
@@ -192,6 +193,7 @@ function PushSetup() {
   usePushNotifications(user)
   useFcmToken(user, navigate)
   useDailyVerseNotif(user)
+  useAzkarNotif(user)
   useIslamicHolidayNotif(user)
   useSyncUtcOffset(user)
   useAutoPrayerSetup(user)
