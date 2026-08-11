@@ -1,5 +1,6 @@
 package app.nurhayat.islam;
 
+import android.content.pm.ApplicationInfo;
 import android.os.Bundle;
 import android.webkit.WebSettings;
 import androidx.core.view.WindowCompat;
@@ -16,12 +17,28 @@ public class MainActivity extends BridgeActivity {
         // повсеместно (--safe-top/--safe-bottom в styles/index.css).
         WindowCompat.setDecorFitsSystemWindows(getWindow(), false);
         super.onCreate(savedInstanceState);
-        // Приложение само грузится по виртуальному https://localhost (Capacitor),
-        // а тестовое видео пока идёт с http-сервера на компьютере — без этого
-        // WebView молча блокирует его как "смешанный контент".
-        this.bridge.getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        // Приложение грузится по виртуальному https://localhost (Capacitor), а
+        // тестовое видео при отладке идёт с http-сервера на компьютере — без
+        // этого WebView молча блокирует его как "смешанный контент".
+        //
+        // ТОЛЬКО для отладки. Раньше это стояло без условия и попадало в релиз:
+        // WebView у всех пользователей соглашался подгружать содержимое по
+        // незашифрованному http, то есть в чужой сети его можно было подменить.
+        // В релизе остаётся поведение по умолчанию — смешанный контент
+        // запрещён.
+        if (isDebugBuild()) {
+            this.bridge.getWebView().getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        }
 
         hideNavigationBar();
+    }
+
+    // Отладочная сборка определяется по флагу самого приложения, а не по
+    // BuildConfig.DEBUG: генерация BuildConfig в проекте отключена (поведение
+    // по умолчанию у новых версий Android Gradle Plugin), и обращение к нему
+    // просто не компилируется.
+    private boolean isDebugBuild() {
+        return (getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0;
     }
 
     // Immersive sticky: прячем кнопочную навигационную панель, свайп снизу
