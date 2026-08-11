@@ -18,6 +18,7 @@ export default function BottomNav() {
   const active = TABS.find(t => pathname === t.path || pathname.startsWith(t.path + '/'))?.path || '/home'
 
   return (
+    <div style={s.wrap}>
     <div style={s.nav}>
       {TABS.map(tab => {
         const isActive = active === tab.path
@@ -45,17 +46,30 @@ export default function BottomNav() {
         )
       })}
     </div>
+    {/* Полоса под системными кнопками Android. Раньше это место закрывалось
+        нижним отступом самой панели вкладок, и потому красилось её цветом
+        (--bg-surface) — приподнятая поверхность заметно светлее фона, и внизу
+        экрана получалась серая плашка. Теперь это отдельный элемент в цвете
+        основного фона темы, так что переход незаметен. */}
+    <div style={s.safeStrip} />
+    </div>
   )
 }
 
 const s = {
+  // Цвета берутся из переменных темы, поэтому при переключении на светлую
+  // тему полоса внизу меняется вместе со всем остальным.
+  wrap: {
+    background: 'var(--bg-deep)',
+    flexShrink: 0, zIndex: 20,
+  },
   nav: {
     display: 'flex',
     background: 'var(--bg-surface)',
     borderTop: '1px solid var(--border)',
-    paddingBottom: 'calc(var(--safe-bottom) + 4px)',
-    flexShrink: 0, zIndex: 20
+    paddingBottom: 4,
   },
+  safeStrip: { height: 'var(--safe-bottom)' },
   btn: {
     flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center',
     gap: 3, padding: '10px 4px 6px',

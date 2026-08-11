@@ -133,9 +133,29 @@ function sendNotif(title, body) {
 // новый решил, что всё почистил — забытый будильник с устаревшим текстом
 // остаётся висеть до своего срабатывания. scheduleQueue гарантирует, что
 // каждый вызов полностью завершается, прежде чем начнётся следующий.
+//
+// Отмена ОБЯЗАНА идти через ту же очередь. Раньше планирование ставилось в
+// очередь, а отмена вызывалась напрямую — и если пользователь выключал
+// уведомления, пока планирование ещё выполнялось, отмена успевала пройти
+// первой, а затем незавершённое планирование дописывало будильники ПОСЛЕ неё.
+// Тумблер показывал "выключено", в базе стояло false, а уведомления о намазе
+// продолжали приходить с телефона до конца дня.
+//
+// Одной очереди мало: планирование могло быть поставлено в очередь ещё до
+// выключения и дойти до записи будильников уже после отмены. Поэтому есть ещё
+// и флаг — перед самой записью проверяем, что уведомления всё ещё нужны.
 let scheduleQueue = Promise.resolve()
+let notifsWanted = true
+
 function scheduleNotifs(prayerTimes, notifBefore) {
+  notifsWanted = true
   scheduleQueue = scheduleQueue.then(() => doScheduleNotifs(prayerTimes, notifBefore))
+  return scheduleQueue
+}
+
+function cancelNotifs() {
+  notifsWanted = false
+  scheduleQueue = scheduleQueue.then(() => cancelPrayerNotifs())
   return scheduleQueue
 }
 
@@ -146,6 +166,9 @@ async function doScheduleNotifs(prayerTimes, notifBefore) {
 
   if (Capacitor.isNativePlatform()) {
     await cancelPrayerNotifs()
+    // Пока мы ждали отмену, пользователь мог выключить уведомления — тогда
+    // ставить новые будильники нельзя ни в коем случае.
+    if (!notifsWanted) return
 
     const notifications = []
     prayerTimes.forEach((p, pIdx) => {
@@ -180,6 +203,9 @@ async function doScheduleNotifs(prayerTimes, notifBefore) {
         }
       })
     })
+    // Последняя проверка прямо перед записью: сборка списка занимает время, и
+    // за него состояние тумблера могло измениться.
+    if (!notifsWanted) return
     if (notifications.length > 0) {
       await LocalNotifications.schedule({ notifications }).catch(() => {})
     }
@@ -1433,7 +1459,7 @@ export default function PrayerPage() {
     const prev = prayerPushEnabled
     setPrayerPushEnabled(next)
     localStorage.setItem('notif_prayer', String(next))
-    if (!next) cancelPrayerNotifs()
+    if (!next) cancelNotifs()
     if (!user) return
     const { error } = await supabase.from('prayer_schedules').upsert(
       { user_id: user.id, prayer_notif_enabled: next },
@@ -1481,7 +1507,7 @@ export default function PrayerPage() {
         }
       })
     } else if (prayerPushEnabled === false) {
-      cancelPrayerNotifs()
+      cancelNotifs()
     }
     return () => clearAllTimers()
   }, [timings, notifOk, remind, prayerPushEnabled, user?.id])

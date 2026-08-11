@@ -9,7 +9,11 @@ import { useIslamicHolidayNotif } from './hooks/useIslamicHolidayNotif'
 import { useSyncUtcOffset } from './hooks/useSyncUtcOffset'
 import { useAutoPrayerSetup } from './hooks/useAutoPrayerSetup'
 import { supabase } from './supabase/client'
-import { Capacitor } from '@capacitor/core'
+import { Capacitor, registerPlugin } from '@capacitor/core'
+
+// Мост к нативной части: согласует цвет значков системных баров Android с
+// темой приложения (см. android/.../SystemBarsPlugin.java).
+const SystemBars = registerPlugin('SystemBars')
 import { App as CapApp } from '@capacitor/app'
 import { runTopBackHandler } from './hooks/useBackHandler'
 import BottomNav           from './components/ui/BottomNav'
@@ -264,6 +268,13 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
+    // Значки в статус-баре и на панели навигации Android рисует система, и
+    // сами по себе они тему приложения не знают. Без этого вызова после
+    // переключения на светлую тему белые значки оказались бы на светлом фоне
+    // и кнопки навигации стали бы невидимыми.
+    if (Capacitor.isNativePlatform()) {
+      SystemBars.setDarkTheme({ dark: theme !== 'light' }).catch(() => {})
+    }
   }, [theme])
 
   useEffect(() => {
