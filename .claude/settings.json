@@ -4,7 +4,17 @@
       "Read(//c/Users/1/AppData/Local/Android/Sdk/build-tools/**)",
       "Read(//c/Users/1/AppData/Local/Android/Sdk/build-tools//**)",
       "Bash(/c/Users/1/AppData/Local/Android/Sdk/build-tools/35.0.0/zipalign.exe -v -p 4 c:/Users/1/Pictures/nur-hayat/android/app/build/outputs/apk/release/app-release-unsigned.apk c:/Users/1/Pictures/nur-hayat/nur-hayat-v7-aligned.apk)",
-      "Bash(ls \"c:/Users/1/Pictures/nur-hayat/android/app/\"*.jks)"
+      "Bash(ls \"c:/Users/1/Pictures/nur-hayat/android/app/\"*.jks)",
+      "Bash(\"/c/Users/1/AppData/Local/Android/Sdk/platform-tools/adb.exe\" devices)",
+      "Bash(\"C:\\Users\\1\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" devices)",
+      "Bash(\"/c/Users/1/AppData/Local/Android/Sdk/platform-tools/adb.exe\" logcat *)",
+      "Bash(\"C:\\Users\\1\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe\" logcat *)",
+      "Bash($ADB devices)",
+      "Bash($ADB logcat *)",
+      "Bash(\"/c/Users/1/AppData/Local/Android/Sdk/platform-tools/adb.exe\" forward *)",
+      "Bash(export PATH=*)",
+      "Bash(\"/c/Users/1/AppData/Local/Android/Sdk/build-tools/37.0.0/apksigner.bat\" verify *)",
+      "Bash(\"/c/Users/1/AppData/Local/Android/Sdk/build-tools/35.0.0/aapt2.exe\" dump *)"
     ]
   }
 }
