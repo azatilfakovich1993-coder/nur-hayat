@@ -9,9 +9,23 @@
     <meta name="apple-mobile-web-app-title" content="Nur Hayat" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&family=Scheherazade+New:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <!--
+      Шрифты подгружаются НЕ блокируя отрисовку.
+
+      Обычный <link rel="stylesheet"> задерживает первый кадр до тех пор, пока
+      файл не придёт. Серверы Google в мобильных сетях РФ недоступны (браузер на
+      телефоне прямо пишет "нет интернета", хотя до нашего сервера доходит за
+      72 мс), поэтому приложение ждало таймаута и показывало ЧЁРНЫЙ ЭКРАН 30-40
+      секунд при первом запуске — без единой надписи, даже без "Загрузка…" ниже.
+      Многие успевали закрыть приложение, решив, что оно не работает.
+
+      Приём с media="print" — стандартный: браузер считает такой файл нужным
+      только для печати и не задерживает из-за него отрисовку, а после загрузки
+      onload переключает его на все виды вывода. Не пришёл — не беда, текст
+      покажется системным шрифтом (запасные прописаны в --font-ui/--font-arabic).
+    -->
+    <link rel="stylesheet" media="print" onload="this.media='all'; this.onload=null"
+      href="https://fonts.googleapis.com/css2?family=Amiri:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600&family=Scheherazade+New:wght@400;500;600;700&display=swap" />
     <title>Nur Hayat · نور حياة</title>
   </head>
   <body>
