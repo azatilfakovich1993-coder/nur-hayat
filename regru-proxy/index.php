@@ -1,10 +1,11 @@
 <?php
-// Прокси перед Supabase (Frankfurt) и Nominatim (поиск города по тексту/GPS) —
-// обходит блокировку/замедление провайдером прямого доступа к этим хостам.
-// Проксирует ТОЛЬКО эти два хоста (open-proxy невозможен).
+// Прокси перед Supabase (Frankfurt), Nominatim (поиск города по тексту/GPS) и
+// Aladhan (времена намаза) — обходит блокировку/замедление провайдером прямого
+// доступа к этим хостам. Проксирует ТОЛЬКО эти три хоста (open-proxy невозможен).
 
 $SUPABASE_HOST  = 'qnkgvsxjxjfmjopnzmdu.supabase.co';
 $NOMINATIM_HOST = 'nominatim.openstreetmap.org';
+$ALADHAN_HOST   = 'api.aladhan.com';
 
 // CORS — ставим сами, не надеясь на то, что Supabase его пришлёт для
 // конкретного эндпоинта (для Storage он не всегда приходит, из-за этого
@@ -28,6 +29,13 @@ $method = $_SERVER['REQUEST_METHOD'];
 if (strpos($path, '/nominatim/') === 0) {
     $targetHost = $NOMINATIM_HOST;
     $url = 'https://' . $targetHost . substr($path, strlen('/nominatim'));
+// /aladhan/v1/timings?... -> https://api.aladhan.com/v1/timings?...
+// Времена намаза. Напрямую api.aladhan.com с мобильного интернета в РФ
+// недоступен (браузер на телефоне пишет "нет соединения"), из-за чего
+// приложение вообще не могло загрузить времена намаза.
+} elseif (strpos($path, '/aladhan/') === 0) {
+    $targetHost = $ALADHAN_HOST;
+    $url = 'https://' . $targetHost . substr($path, strlen('/aladhan'));
 } else {
     $targetHost = $SUPABASE_HOST;
     $url = 'https://' . $targetHost . $path;

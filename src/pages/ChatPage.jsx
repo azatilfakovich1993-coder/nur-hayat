@@ -312,6 +312,9 @@ export default function ChatPage() {
   const [reloadKey,   setReloadKey]   = useState(0)
   const [retryAttempt, setRetryAttempt] = useState(0)
   const autoRetryRef = useRef(null)
+  // До какого момента опрашивать сообщения раз в секунду, а не раз в шесть
+  const liveUntilRef  = useRef(0)
+  const lastSeenIdRef = useRef(null)
   const msgsCountRef = useRef(0)
   useEffect(() => { msgsCountRef.current = messages.length }, [messages])
 
@@ -434,13 +437,37 @@ export default function ChatPage() {
     }
     updatePresence().catch(() => {})
 
-    // Polling — основной способ обновления, т.к. WebSocket (Realtime) недоступен
-    // без VPN (Cloudflare тоже блокируется, проверено). Опрашиваем чаще, чтобы
-    // сообщения и онлайн-статус ощущались почти мгновенными
+    // Опрос — единственный способ обновления: постоянное соединение (Realtime)
+    // через наш прокси невозможно, PHP так не умеет — проверено, сервер отвечает
+    // ошибкой 500 на каждую попытку.
+    //
+    // Интервалы подняты с 1,5 секунды. Прежний шаг означал около 120 запросов в
+    // минуту с одного телефона: каждый круг спрашивал сообщения, отмечал «я тут»
+    // и считал онлайн — три запроса. Общий хостинг принимает это за атаку и
+    // закрывает адрес; именно так у разработчика перестало работать приложение
+    // на мобильном интернете, пока сайт при этом прекрасно отвечал остальным.
+    //
+    // Отметка присутствия и подсчёт онлайна двигаются медленнее сообщений: они
+    // и так считают «недавними» тех, кто отметился за последние 20 секунд.
+    // Шаг опроса сообщений — секунда, пока в чате идёт разговор, и шесть секунд,
+    // когда все молчат. Живую переписку это не замедляет вовсе: первое же новое
+    // сообщение переводит чат в быстрый режим на две минуты, и дальше каждый
+    // ответ его продлевает. А молчащий чат (то есть почти всегда) перестаёт
+    // дёргать сервер впустую.
+    let tick = 0
     const poll = setInterval(() => {
-      pullMessages().catch(() => {})
+      // В свёрнутом приложении опрашивать некого — экран никто не видит, а
+      // запросы уходили бы круглосуточно у каждого, кто забыл закрыть чат.
+      if (document.visibilityState !== 'visible') return
+      tick++
+      if (Date.now() < liveUntilRef.current || tick % 6 === 0) {
+        pullMessages().catch(() => {})
+      }
+    }, 1000)
+    const pollPresence = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
       updatePresence().catch(() => {})
-    }, 1500)
+    }, 15000)
 
     void supabase.from('chat_reads')
       .select('last_read_at')
@@ -452,34 +479,30 @@ export default function ChatPage() {
         if (data?.[0]) setLastReadAt(new Date(data[0].last_read_at))
       })
 
-    // Realtime — бонус, если WebSocket доступен; не блокируем UI
-    const channel = supabase.channel(`chat-${room}-${user.id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
-        ({ new: msg }) => {
-          if (msg.room !== room) return
-          setMessages(prev => {
-            if (prev.find(m => m.id === msg.id)) return prev
-            const next = [...prev, msg]
-            setCachedMessages(room, next)
-            return next
-          })
-        })
-      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' },
-        ({ new: msg }) => {
-          if (msg.room === room)
-            setMessages(prev => prev.map(m => m.id === msg.id ? msg : m))
-        })
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' },
-        ({ old }) => setMessages(prev => prev.filter(m => m.id !== old.id)))
-      .subscribe()
+    // Постоянное соединение (Realtime) здесь было «бонусом на случай, если
+    // сработает». Оно не срабатывало НИКОГДА: приложение ходит в Supabase через
+    // собственный прокси на PHP, а тот принципиально не умеет держать такие
+    // соединения — на каждую попытку отвечает ошибкой 500. Толку от него не было,
+    // а библиотека переподключалась снова и снова, ровным потоком ошибок в адрес
+    // хостинга. Обновление и без него делает опрос выше, поэтому просто убрано.
 
     return () => {
       cancelled = true
       clearInterval(poll)
+      clearInterval(pollPresence)
       if (autoRetryRef.current) clearTimeout(autoRetryRef.current)
-      supabase.removeChannel(channel)
     }
   }, [room, user?.id, reloadKey])
+
+  // Пока в чате идёт разговор, опрос держим секундным. Отсчёт заводится от
+  // последнего появившегося сообщения — своего или чужого, без разницы.
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last) return
+    if (last.id === lastSeenIdRef.current) return
+    lastSeenIdRef.current = last.id
+    liveUntilRef.current = Date.now() + 120000
+  }, [messages])
 
   // Скролл вниз — только когда реально появилось новое последнее сообщение,
   // и только если юзер уже был у низа чата (или это его собственное сообщение).

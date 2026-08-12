@@ -4,7 +4,7 @@ import { useAuth } from '../hooks/useAuth'
 import { addNur } from '../utils/nur'
 import { localDateStr } from '../utils/date'
 import { withRetry } from '../utils/network'
-import { fetchTimings, CUSTOM_METHOD, DEFAULT_METHOD } from '../utils/prayerTimes'
+import { fetchTimings, cachedTimings, CUSTOM_METHOD, DEFAULT_METHOD, METHOD_MIGRATED_KEY } from '../utils/prayerTimes'
 import { rewardFeedback, tapFeedback } from '../utils/feedback'
 import { clearAllTimers, pushTimer, cancelPrayerNotifs } from '../utils/prayerNotifs'
 import { supabase } from '../supabase/client'
@@ -582,9 +582,11 @@ async function searchCities(query) {
   }
 }
 
-// ── Методы расчёта ────────────────────────────────────────────
-const METHOD_MIGRATED_KEY = 'prayer_method_real_v1'
+// Последнее определённое место с названием города — чтобы подпись под временами
+// была на месте сразу, а не появлялась после уточнения геолокации.
+const LAST_LOC_KEY = 'prayer_last_loc'
 
+// ── Методы расчёта ────────────────────────────────────────────
 // До этой правки расчёт ВСЕГДА шёл по углам (method=99), какой бы метод ни был
 // выбран в настройках. Если просто начать отправлять выбранный метод, у всех
 // разом изменятся времена намаза — а это последнее, что можно менять человеку
@@ -1165,10 +1167,30 @@ export default function PrayerPage() {
   }, [mode, savedCity, method, school, fajrAngle, ishaAngle])
 
   function loadByGeo() {
-    setLoading(true); setError(null)
-    if (!navigator.geolocation) {
-      setError('geo_denied')
+    setError(null)
+
+    // Сначала показываем уже посчитанное за сегодня — мгновенно, ничего не
+    // ожидая. Раньше экран висел на «Загрузка…», пока телефон ищет спутники:
+    // приложение отказывалось брать измерение старше минуты, а свежее в
+    // помещении ищется до пятнадцати секунд. Снаружи это выглядело как
+    // «времена грузятся быстро через раз», хотя сеть была ни при чём.
+    // Точное местоположение всё равно уточняется ниже и поправит результат,
+    // если человек уехал в другой город.
+    const ready = cachedTimings(method, school, fajrAngle, ishaAngle)
+    if (ready) {
+      setTimings(ready.data.timings)
+      setHijri(ready.data.date.hijri)
+      try {
+        const saved = JSON.parse(localStorage.getItem(LAST_LOC_KEY) || 'null')
+        if (saved) setLocation(saved)
+      } catch { /* подпись города не критична, приедет с уточнением */ }
       setLoading(false)
+    } else {
+      setLoading(true)
+    }
+
+    if (!navigator.geolocation) {
+      if (!ready) { setError('geo_denied'); setLoading(false) }
       return
     }
     navigator.geolocation.getCurrentPosition(
@@ -1187,16 +1209,29 @@ export default function PrayerPage() {
             const city    = gj.address?.city || gj.address?.town || gj.address?.village || ''
             const country = gj.address?.country || ''
             setLocation(prev => prev ? { ...prev, city, country } : { lat, lon, city, country })
+            try {
+              localStorage.setItem(LAST_LOC_KEY, JSON.stringify({ lat, lon, city, country }))
+            } catch {}
           } catch { /* геокодирование не критично */ }
-        } catch { setError('api_error') }
+        } catch { if (!ready) setError('api_error') }
         setLoading(false)
       },
       // err.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT — раньше
       // любая из этих причин (включая обычный таймаут, частый при поиске сигнала
       // в помещении) показывала одно и то же "нет доступа к геолокации", даже
       // если GPS на самом деле включён и просто не успел поймать сигнал.
-      err => { setError(err?.code === 1 ? 'geo_denied' : 'geo_timeout'); setLoading(false) },
-      { timeout: 15000, maximumAge: 60000 }
+      //
+      // Если времена за сегодня уже показаны, промах геолокации замалчиваем:
+      // подменять готовый экран ошибкой из-за того, что уточнение не удалось, —
+      // хуже, чем оставить как есть.
+      err => {
+        if (!ready) setError(err?.code === 1 ? 'geo_denied' : 'geo_timeout')
+        setLoading(false)
+      },
+      // Измерение до получаса давности берём как есть. С прежней минутой телефон
+      // почти всегда искал спутники заново — ради точности, которая на времена
+      // намаза не влияет вовсе: за полчаса пешком не уйти дальше пары километров.
+      { timeout: 15000, maximumAge: 30 * 60 * 1000 }
     )
   }
 

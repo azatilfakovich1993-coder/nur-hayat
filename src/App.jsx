@@ -81,23 +81,26 @@ function ChatUnreadProvider({ children }) {
     }
 
     refreshUnread()
-    const poll = setInterval(refreshUnread, 5000)
+    // Счётчик непрочитанного нужен только когда человек смотрит на экран —
+    // в свёрнутом приложении значок всё равно никто не видит, а запрос уходил
+    // каждые пять секунд круглосуточно, у каждого пользователя.
+    // Раз в 20 секунд, а не в 5. Значку «есть новые сообщения» такая свежесть
+    // не нужна — человек разницы не заметит, а поток падает вчетверо: это самый
+    // постоянный запрос в приложении, он идёт всё время, пока оно открыто, даже
+    // когда человек читает Коран и в чат не заходил.
+    const poll = setInterval(() => {
+      if (document.visibilityState !== 'visible') return
+      refreshUnread()
+    }, 20000)
     return () => clearInterval(poll)
   }, [user?.id])
 
-  // Realtime: считаем новые сообщения пока не в чате
-  useEffect(() => {
-    if (!user) return
-    const channel = supabase.channel('unread-tracker')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' },
-        ({ new: msg }) => {
-          if (msg.user_id !== user.id && !onChatRef.current) {
-            setUnread(n => n + 1)
-          }
-        })
-      .subscribe()
-    return () => supabase.removeChannel(channel)
-  }, [user?.id])
+  // Здесь стояло постоянное соединение (Realtime) для подсчёта новых сообщений.
+  // Оно висело всё время работы приложения, на любом экране — и не работало
+  // никогда: приложение ходит в Supabase через собственный прокси на PHP, а тот
+  // такие соединения держать не умеет и отвечает ошибкой 500. Библиотека же
+  // переподключалась без остановки, и этот ровный поток ошибок с одного адреса
+  // защита хостинга принимает за атаку. Счётчик и без него обновляет опрос выше.
 
   return (
     <ChatUnreadCtx.Provider value={{ unread, resetUnread: () => setUnread(0) }}>

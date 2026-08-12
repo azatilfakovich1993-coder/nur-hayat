@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { supabase } from '../supabase/client'
-import { fetchTimings, DEFAULT_METHOD } from '../utils/prayerTimes'
+import { fetchTimings, DEFAULT_METHOD, METHOD_MIGRATED_KEY } from '../utils/prayerTimes'
 import { localDateStr } from '../utils/date'
 
 // Для нового пользователя, который ещё ни разу не заходил во вкладку "Намаз"
@@ -45,6 +45,15 @@ export function useAutoPrayerSetup(user) {
           const { Fajr, Dhuhr, Asr, Maghrib, Isha } = data.timings
 
           localStorage.setItem('prayer_mode', 'auto')
+          // Сразу закрепляем метод расчёта, которым только что посчитали
+          // времена. Без этого во вкладке «Намаз» срабатывал перевод старых
+          // пользователей на «Свои углы»: он считает признаком «человек уже
+          // пользовался приложением» в том числе запись prayer_mode — а её
+          // оставляла эта самая автонастройка. В итоге НОВЫЙ пользователь
+          // получал углы 18/17 вместо российского САМР 16/15, и показанные
+          // времена расходились с теми, что здесь ушли на сервер.
+          localStorage.setItem('prayer_method', String(method))
+          localStorage.setItem(METHOD_MIGRATED_KEY, '1')
 
           await supabase.from('prayer_schedules').upsert({
             user_id:              user.id,
@@ -62,7 +71,9 @@ export function useAutoPrayerSetup(user) {
         // геолокация отклонена/недоступна — без нее не узнать время намаза,
         // дальше только вручную через вкладку "Намаз" (выбор города)
       },
-      { timeout: 15000, maximumAge: 60000 },
+      // Полчаса — как и во вкладке «Намаз»: свежее измерение телефон ищет в
+      // помещении до пятнадцати секунд, а на расчёт времён это не влияет.
+      { timeout: 15000, maximumAge: 30 * 60 * 1000 },
     )
   }, [user?.id])
 }

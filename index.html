@@ -36,15 +36,23 @@
       </div>
     </div>
     <script>
-      window.addEventListener('error', function(e) {
+      // Эта заставка живёт только до запуска приложения — потом React заменяет
+      // её собой, и элемента js-status больше нет. Строка со style стояла ВНЕ
+      // проверки на его существование, поэтому сам обработчик падал с ошибкой
+      // «Cannot read properties of null», перекрывая собой настоящую причину.
+      // Из-за этого любая ошибка в работающем приложении выглядела в журнале
+      // одинаково и бесполезно.
+      function showStartupError(text) {
         var el = document.getElementById('js-status');
-        if (el) el.innerHTML = '⚠️ Ошибка JS: ' + (e.message || e) + '<br><small>' + (e.filename || '') + ':' + (e.lineno || '') + '</small>';
+        if (!el) return;
+        el.innerHTML = text;
         el.style.color = '#ff6b6b';
+      }
+      window.addEventListener('error', function(e) {
+        showStartupError('⚠️ Ошибка JS: ' + (e.message || e) + '<br><small>' + (e.filename || '') + ':' + (e.lineno || '') + '</small>');
       });
       window.addEventListener('unhandledrejection', function(e) {
-        var el = document.getElementById('js-status');
-        if (el) el.innerHTML = '⚠️ Ошибка: ' + (e.reason?.message || e.reason || 'Unknown') ;
-        el.style.color = '#ff6b6b';
+        showStartupError('⚠️ Ошибка: ' + (e.reason?.message || e.reason || 'Unknown'));
       });
     </script>
     <script type="module" src="/src/main.jsx"></script>
