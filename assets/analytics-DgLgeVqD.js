@@ -1,1 +1,0 @@
-import{s}from"./index-Lo3BvoqM.js";const e="nur-hayat-session-id";function r(){try{let t=localStorage.getItem(e);return t||(t=crypto.randomUUID(),localStorage.setItem(e,t)),t}catch{return"unknown"}}function i(t,n={},a=null){try{s.from("analytics_events").insert({session_id:r(),user_id:a||null,event_name:t,event_data:n}).then(()=>{},()=>{})}catch{}}export{i as t};
