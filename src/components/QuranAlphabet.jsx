@@ -120,9 +120,29 @@ function firstSuccessful(promises) {
   })
 }
 
+// Внешнее хранилище видео. Задаётся одной настройкой VITE_VIDEO_BASE_URL —
+// если она пуста, всё работает по-старому, через Supabase.
+//
+// Зачем уехали: 40 роликов по 14-17 минут это 1,5 ГБ, а бесплатный тариф
+// Supabase даёт 5 ГБ исходящего трафика в месяц — примерно сто просмотров на
+// всех. 17 августа он кончился, и Supabase отключил проект целиком: у всех
+// пользователей разом перестал работать вход, потому что видео делили одну
+// квоту с авторизацией и базой. Видео обязаны жить отдельно.
+const VIDEO_BASE_URL = import.meta.env.VITE_VIDEO_BASE_URL
+
 async function resolveVideoUrl(storagePath, fileName) {
   const cached = await getCachedVideoPath(fileName)
   if (cached) return cached
+
+  // Во внешнем хранилище файлы лежат открыто, поэтому ссылка собирается сразу.
+  // Прежний путь требовал сперва запросить у Supabase подписанный адрес — это
+  // лишний поход по сети перед каждым роликом, а на плохой связи ещё и вся
+  // возня с гонкой двух путей ниже. Здесь ничего этого не нужно.
+  if (VIDEO_BASE_URL) {
+    const url = `${VIDEO_BASE_URL.replace(/\/+$/, '')}/${storagePath}`
+    cacheVideoInBackground(fileName, url)
+    return url
+  }
 
   const primaryPromise = getPrimarySignedUrl(storagePath)
 

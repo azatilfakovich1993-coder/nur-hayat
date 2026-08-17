@@ -25,6 +25,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $path   = $_SERVER['REQUEST_URI'];
 $method = $_SERVER['REQUEST_METHOD'];
 
+// Обучающие видео переехали в отдельное хранилище (Timeweb): в Supabase они
+// делили квоту на исходящий трафик с базой и авторизацией, и 17 августа она
+// кончилась — Supabase отключил проект целиком, у всех разом перестал
+// работать вход. Но у людей на телефонах остались версии приложения, которые
+// по-прежнему просят ролики у Supabase. Перенаправляем такие запросы на новое
+// место: иначе старые версии снова сожгут квоту и всё повторится.
+$VIDEO_BASE = 'https://nurhayat-videos.s3.twcstorage.ru';
+if (preg_match('#^/storage/v1/object/(?:sign|public|authenticated)/letter-videos/(.+?)(?:?|$)#', $path, $m)) {
+    header('Location: ' . $VIDEO_BASE . '/' . rawurldecode($m[1]), true, 302);
+    exit;
+}
+
 // /nominatim/search?... -> https://nominatim.openstreetmap.org/search?...
 if (strpos($path, '/nominatim/') === 0) {
     $targetHost = $NOMINATIM_HOST;

@@ -33,6 +33,11 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: nurhayat-78bc5.firebasestorage.app
           VITE_FIREBASE_MESSAGING_SENDER_ID: "76970353004"
           VITE_FIREBASE_APP_ID: 1:76970353004:web:d31dbe432a708788d91349
+          # Обучающие видео лежат отдельно от Supabase — в объектном хранилище
+          # Timeweb. Раньше они делили с ним квоту на исходящий трафик, и
+          # 17 августа она кончилась: Supabase отключил проект целиком, у всех
+          # разом перестал работать вход. Видео не должны делить квоту с базой.
+          VITE_VIDEO_BASE_URL: https://nurhayat-videos.s3.twcstorage.ru
 
       - name: Deploy
         uses: peaceiris/actions-gh-pages@v4
@@ -55,6 +60,11 @@ jobs:
           VITE_FIREBASE_STORAGE_BUCKET: nurhayat-78bc5.firebasestorage.app
           VITE_FIREBASE_MESSAGING_SENDER_ID: "76970353004"
           VITE_FIREBASE_APP_ID: 1:76970353004:web:d31dbe432a708788d91349
+          # Обучающие видео лежат отдельно от Supabase — в объектном хранилище
+          # Timeweb. Раньше они делили с ним квоту на исходящий трафик, и
+          # 17 августа она кончилась: Supabase отключил проект целиком, у всех
+          # разом перестал работать вход. Видео не должны делить квоту с базой.
+          VITE_VIDEO_BASE_URL: https://nurhayat-videos.s3.twcstorage.ru
 
       - name: Deploy to Firebase Hosting
         if: env.FIREBASE_TOKEN != ''
