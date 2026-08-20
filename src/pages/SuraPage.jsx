@@ -1,3 +1,4 @@
+import { quranAudioUrl } from '../utils/quranAudio'
 import { useState, useEffect, useRef, useCallback, forwardRef } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { SURAS } from '../data/suras'
@@ -82,7 +83,7 @@ const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-pro
 function ayatAudioUrl(reciter, suraId, ayatNum) {
   const num = globalAyahNumber(suraId, ayatNum)
   const cdnUrl = `https://cdn.islamic.network/quran/audio/${reciter.bitrate}/${reciter.id}/${num}.mp3`
-  return AUDIO_PROXY + encodeURIComponent(cdnUrl)
+  return quranAudioUrl(cdnUrl)
 }
 
 function fmtTime(sec) {

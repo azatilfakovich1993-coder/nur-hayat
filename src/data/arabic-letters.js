@@ -1,9 +1,10 @@
+import { quranAudioUrl } from '../utils/quranAudio'
 // Аудио — через Supabase audio-proxy (CDN islamic.network блокируется
 // у части провайдеров РФ без VPN, поэтому проксируем через сервер).
 // Идём через nurhayat.ru — сам supabase.co тоже блокируется провайдерами
 const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-proxy?url=`
 const CDN = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
-const sa  = n => AUDIO_PROXY + encodeURIComponent(`${CDN}/${n}.mp3`)
+const sa  = n => quranAudioUrl(`${CDN}/${n}.mp3`)
 // Local letter audio (letter_2 = Alif ... letter_29 = Ya)
 // BASE_URL учитывает подпапку деплоя (GitHub Pages: /nur-hayat/, Firebase: /)
 const la  = n      => `${import.meta.env.BASE_URL}audio/letters/letter_${n}.mp3`

@@ -1,3 +1,4 @@
+import { quranAudioUrl } from '../utils/quranAudio'
 import { useState, useRef, useEffect } from 'react'
 import { useBackHandler } from '../hooks/useBackHandler'
 import { SURAHS } from '../data/surahs-learn'
@@ -9,7 +10,7 @@ import { addNur } from '../utils/nur'
 // у части провайдеров РФ без VPN, поэтому проксируем через сервер).
 // Идём через nurhayat.ru — сам supabase.co тоже блокируется провайдерами
 const AUDIO_PROXY = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audio-proxy?url=`
-const proxify = url => AUDIO_PROXY + encodeURIComponent(url)
+const proxify = quranAudioUrl
 const CDN_VERSE = 'https://cdn.islamic.network/quran/audio/128/ar.alafasy'
 const CDN_SURAH = 'https://cdn.islamic.network/quran/audio-surah/128/ar.alafasy'
 
