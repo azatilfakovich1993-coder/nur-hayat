@@ -46,6 +46,27 @@ if (preg_match('#^/storage/v1/object/(?:sign|public|authenticated)/letter-videos
     exit;
 }
 
+// Аудио чтения Корана. Раньше каждый прослушанный аят шёл через edge-функцию
+// Supabase и тратил его квоту на исходящий трафик — ту самую, из-за которой
+// приложение дважды легло целиком, вместе со входом. Чтец по умолчанию
+// (Алафаси) и записи целых сур перенесены в Timeweb, но у людей на телефонах
+// остались версии, которые просят их у Supabase — перенаправляем сюда.
+// Остальные чтецы выбирают редко, они идут дальше обычным путём.
+if (strpos($path, '/functions/v1/audio-proxy') === 0) {
+    $q = parse_url($path, PHP_URL_QUERY);
+    parse_str($q ?: '', $qs);
+    $src  = $qs['url'] ?? '';
+    $pref = 'https://cdn.islamic.network/';
+    if (strpos($src, $pref) === 0) {
+        $rest = substr($src, strlen($pref));
+        if (strpos($rest, 'quran/audio/128/ar.alafasy/') === 0
+            || strpos($rest, 'quran/audio-surah/128/ar.alafasy/') === 0) {
+            header('Location: ' . $VIDEO_BASE . '/' . $rest, true, 302);
+            exit;
+        }
+    }
+}
+
 if (strpos($path, '/nominatim/') === 0) {
     $targetHost = $NOMINATIM_HOST;
     $url = 'https://' . $targetHost . substr($path, strlen('/nominatim'));
