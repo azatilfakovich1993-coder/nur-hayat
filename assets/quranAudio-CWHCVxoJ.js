@@ -1,0 +1,1 @@
+const n="https://nurhayat-videos.s3.twcstorage.ru",o="https://nurhayat.ru/functions/v1/audio-proxy?url=",s="https://cdn.islamic.network/",u=["quran/audio/128/ar.alafasy/","quran/audio-surah/128/ar.alafasy/"];function e(t){if(t.startsWith(s)){const a=t.slice(s.length);if(u.some(r=>a.startsWith(r)))return`${n.replace(/\/+$/,"")}/${a}`}return o+encodeURIComponent(t)}export{e as q};

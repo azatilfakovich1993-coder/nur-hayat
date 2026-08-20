@@ -1,1 +1,0 @@
-import{C as o,L as c}from"./index-BzoynJql.js";const a=[];function e(){a.forEach(clearTimeout),a.length=0}function r(i){a.push(i)}async function f(){if(!o.isNativePlatform()){e();return}try{const{notifications:i}=await c.getPending(),n=i.filter(t=>t.id<500).map(t=>({id:t.id}));n.length>0&&await c.cancel({notifications:n})}catch{}}export{e as a,f as c,r as p};
