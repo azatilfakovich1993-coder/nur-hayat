@@ -67,6 +67,25 @@ if (strpos($path, '/functions/v1/audio-proxy') === 0) {
     }
 }
 
+// ── КОРОТКАЯ ССЫЛКА НА ПРИЛОЖЕНИЕ ───────────────────────────────────────────
+// nurhayat.ru/app — короткий адрес для роликов и объявлений. Его легко
+// произнести вслух и набрать руками, а адрес веб-версии на Firebase
+// (nurhayat-78bc5.web.app) на слух не воспринимается вовсе.
+//
+// /app          -> веб-версия, открывается сразу, без установки
+// /app/rustore  -> страница приложения в RuStore
+//
+// Если веб-версия когда-нибудь переедет, править надо будет только здесь —
+// ссылки в уже опубликованных роликах останутся рабочими.
+if ($path === '/app' || strpos($path, '/app?') === 0) {
+    header('Location: https://nurhayat-78bc5.web.app/', true, 302);
+    exit;
+}
+if (strpos($path, '/app/rustore') === 0) {
+    header('Location: https://www.rustore.ru/catalog/app/app.nurhayat.islam', true, 302);
+    exit;
+}
+
 if (strpos($path, '/nominatim/') === 0) {
     $targetHost = $NOMINATIM_HOST;
     $url = 'https://' . $targetHost . substr($path, strlen('/nominatim'));
